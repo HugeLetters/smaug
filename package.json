@@ -11,7 +11,8 @@
 		"typecheck": "tsc --noEmit",
 		"e2e": "playwright test",
 		"e2e:ui": "playwright test --ui",
-		"ralph-prd": "bun run ./scripts/ralph.ts --prompt-file ./docs/ralph.md"
+		"ralph-prd": "bun run ./scripts/ralph.ts --prompt-file ./docs/ralph.md",
+		"gmail-sync": "bun run ./scripts/gmail-sync/index.ts"
 	},
 	"dependencies": {
 		"@effect/platform": "^0.94.4",
@@ -21,6 +22,7 @@
 		"@solidjs/start": "^1.2.1",
 		"arkregex": "^0.0.5",
 		"effect": "^3.19.16",
+		"googleapis": "^171.4.0",
 		"solid-js": "^1.9.11",
 		"vinxi": "^0.5.11"
 	},
