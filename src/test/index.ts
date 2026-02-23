@@ -3,8 +3,8 @@ import { fail } from "node:assert/strict";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Fn from "effect/Function";
-import { UnknownDiffer } from "~/utils/differ";
-import { Stdout } from "~/utils/stdout";
+import { UnknownDiffer } from "~/server/lib/utils/differ";
+import { Stdout } from "~/server/lib/utils/stdout";
 
 /**
  * Asserts that an Effect fails. Flips the result so that success becomes failure and vice versa.
