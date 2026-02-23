@@ -36,7 +36,8 @@
 					"String": "Str",
 					"Function": "Fn",
 					"Number": "Num",
-					"BigInt": "BigInteger"
+					"BigInt": "BigInteger",
+					"RegExp": "RE"
 				}
 			}
 		]
