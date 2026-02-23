@@ -1,5 +1,5 @@
 {
-	"name": "example-with-tailwindcss",
+	"name": "smaug",
 	"type": "module",
 	"scripts": {
 		"dev": "bun run ./scripts/dev.ts",
