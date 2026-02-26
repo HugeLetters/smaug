@@ -5,22 +5,16 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
-import { loadCredentials, loadToken, saveToken } from "./config";
-import {
-	type ConfigError,
-	type Email,
-	type GmailAccount,
-	GmailSyncError,
-} from "./types";
+import { type ConfigError, type Email, GmailSyncError } from "./types";
 
 const SCOPES = [
 	"https://www.googleapis.com/auth/gmail.modify",
 	"https://www.googleapis.com/auth/gmail.readonly",
 ];
 
-export const createGmailClient = (
-	account: GmailAccount,
-): Effect.Effect<
+export const createGmailClient = (account: {
+	email: string;
+}): Effect.Effect<
 	gmail_v1.Gmail,
 	GmailSyncError | PlatformError | ConfigError,
 	FileSystem | Path
@@ -28,14 +22,17 @@ export const createGmailClient = (
 	Effect.gen(function* () {
 		yield* Effect.log(`Creating Gmail client for ${account.email}`);
 
-		const credentials = yield* loadCredentials(account);
-		const existingToken = yield* loadToken(account);
+		const credentials = { clientId: "", clientSecret: "" };
+		const existingToken = Option.some({
+			access_token: "",
+			refresh_token: "",
+			expiry_date: 0,
+		});
 
-		const oauth2Client = new google.auth.OAuth2(
-			credentials.clientId,
-			credentials.clientSecret,
-			credentials.redirectUris[0] ?? "http://localhost",
-		);
+		const oauth2Client = new google.auth.OAuth2({
+			client_id: credentials.clientId,
+			client_secret: credentials.clientSecret,
+		});
 
 		if (Option.isSome(existingToken)) {
 			const token = existingToken.value;
@@ -45,11 +42,9 @@ export const createGmailClient = (
 				expiry_date: token.expiry_date,
 			});
 		} else {
-			return yield* Effect.fail(
-				new GmailSyncError({
-					message: `No stored token found for ${account.email}. Run auth setup first.`,
-				}),
-			);
+			return yield* new GmailSyncError({
+				message: `No stored token found for ${account.email}. Run auth setup first.`,
+			});
 		}
 
 		const gmail = google.gmail({ version: "v1", auth: oauth2Client });
@@ -119,7 +114,7 @@ export const getOrCreateLabel = (
 export const fetchUnprocessedEmails = (
 	client: gmail_v1.Gmail,
 	labelId: string,
-): Effect.Effect<Email[], GmailSyncError> =>
+) =>
 	Effect.gen(function* () {
 		const query = `-label:${labelId} category:primary`;
 		yield* Effect.log(`Fetching emails with query: ${query}`);
@@ -180,7 +175,7 @@ export const applyLabel = (
 	client: gmail_v1.Gmail,
 	emailId: string,
 	labelId: string,
-): Effect.Effect<void, GmailSyncError> =>
+) =>
 	Effect.gen(function* () {
 		yield* Effect.log(`Applying label ${labelId} to email ${emailId}`);
 
@@ -203,10 +198,7 @@ export const applyLabel = (
 		yield* Effect.log(`Label applied successfully`);
 	});
 
-export const getEmailContent = (
-	client: gmail_v1.Gmail,
-	emailId: string,
-): Effect.Effect<string, GmailSyncError> =>
+export const getEmailContent = (client: gmail_v1.Gmail, emailId: string) =>
 	Effect.gen(function* () {
 		yield* Effect.log(`Getting email content for ${emailId}`);
 
@@ -263,17 +255,11 @@ function extractTextFromHtml(html: string): string {
 		.trim();
 }
 
-export const initiateAuth = (
-	account: GmailAccount,
-): Effect.Effect<
-	string,
-	GmailSyncError | PlatformError | ConfigError,
-	FileSystem
-> =>
+export const initiateAuth = (account: { email: string }) =>
 	Effect.gen(function* () {
 		yield* Effect.log(`Initiating OAuth flow for ${account.email}`);
 
-		const credentials = yield* loadCredentials(account);
+		const credentials = { clientId: "", clientSecret: "", redirectUris: [] };
 
 		const oauth2Client = new google.auth.OAuth2(
 			credentials.clientId,
@@ -290,18 +276,11 @@ export const initiateAuth = (
 		return authUrl;
 	});
 
-export const completeAuth = (
-	account: GmailAccount,
-	code: string,
-): Effect.Effect<
-	void,
-	GmailSyncError | PlatformError | ConfigError,
-	FileSystem | Path
-> =>
+export const completeAuth = (account: { email: string }, code: string) =>
 	Effect.gen(function* () {
 		yield* Effect.log(`Completing OAuth flow for ${account.email}`);
 
-		const credentials = yield* loadCredentials(account);
+		const credentials = { clientId: "", clientSecret: "", redirectUris: [] };
 
 		const oauth2Client = new google.auth.OAuth2(
 			credentials.clientId,
@@ -326,11 +305,15 @@ export const completeAuth = (
 			);
 		}
 
-		yield* saveToken(account, {
-			access_token: tokens.access_token,
-			refresh_token: tokens.refresh_token ?? undefined,
-			expiry_date: tokens.expiry_date ?? undefined,
-		});
+		yield* Effect.succeed([
+			"saveToken",
+			account,
+			{
+				access_token: tokens.access_token,
+				refresh_token: tokens.refresh_token ?? undefined,
+				expiry_date: tokens.expiry_date ?? undefined,
+			},
+		]);
 
 		yield* Effect.log(`OAuth flow completed for ${account.email}`);
 	});

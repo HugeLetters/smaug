@@ -1,11 +1,19 @@
 import * as Command from "@effect/cli/Command";
 import * as Options from "@effect/cli/Options";
+import * as Path from "@effect/platform/Path";
 import { BunContext, BunRuntime } from "@effect/platform-bun";
+import * as BunCommandExecutor from "@effect/platform-bun/BunCommandExecutor";
+import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
+import * as BunPath from "@effect/platform-bun/BunPath";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
+import { jsonFileConfigProvider } from "~/server/lib/utils/config";
+import { Secrets } from "~/server/lib/utils/secrets";
+import { EnsureAuthClientAuthenticated } from "./auth";
 import { loadConfig } from "./config";
 import {
 	applyLabel,
@@ -13,9 +21,10 @@ import {
 	fetchUnprocessedEmails,
 	getOrCreateLabel,
 } from "./gmail";
+import { Google } from "./googleapi";
 import { parseEmail } from "./parser";
 import { appendTransactions } from "./sheets";
-import type { GmailAccount, Transaction } from "./types";
+import type { AccountSecretConfig, Transaction } from "./types";
 
 const LABEL_NAME = "synced-to-shared-expenses-sheet";
 
@@ -49,7 +58,7 @@ const Sync = Effect.gen(function* () {
 	yield* Effect.log("Sync complete");
 });
 
-const processAccount = (account: GmailAccount, _spreadsheetId: string) =>
+const processAccount = (account: AccountSecretConfig, _spreadsheetId: string) =>
 	Effect.gen(function* () {
 		yield* Effect.log(`Processing account: ${account.email}`);
 
@@ -96,6 +105,8 @@ const GmailSyncCommand = Command.make(
 	},
 	({ runOnce }) =>
 		Effect.gen(function* () {
+			yield* EnsureAuthClientAuthenticated;
+
 			let task = Sync;
 			if (!runOnce) {
 				task = task.pipe(Effect.schedule(Schedule.cron("0 9 * * *")));
@@ -110,7 +121,22 @@ const cli = Command.run(GmailSyncCommand, {
 	version: "v1.0.0",
 });
 
-cli(process.argv).pipe(
-	Effect.provide([Logger.pretty, BunContext.layer]),
-	BunRuntime.runMain,
+const ConfigLive = Effect.gen(function* () {
+	const path = yield* Path.Path;
+
+	const provider = yield* jsonFileConfigProvider({
+		path: path.resolve(import.meta.dir, ".config.json"),
+	});
+
+	return Layer.setConfigProvider(provider);
+}).pipe(Layer.unwrapEffect);
+
+const MainLive = Google.Oauth.OauthClient.Default.pipe(
+	Layer.merge(BunCommandExecutor.layer),
+	Layer.provideMerge(Secrets.Default("gmail-sync")),
+	Layer.provideMerge(ConfigLive),
+	Layer.provide(BunFileSystem.layer),
+	Layer.provide(BunPath.layer),
 );
+
+cli(process.argv).pipe(Effect.provide(MainLive), BunRuntime.runMain);

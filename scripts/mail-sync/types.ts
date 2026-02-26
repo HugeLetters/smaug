@@ -21,27 +21,6 @@ export const TransactionSchema = Schema.Struct({
 export type Transaction = typeof TransactionSchema.Type;
 export type Bank = Transaction["bankName"];
 
-export const GmailAccountSchema = Schema.Struct({
-	email: Schema.String,
-	credentialsPath: Schema.String,
-	tokenPath: Schema.String,
-});
-
-export type GmailAccount = typeof GmailAccountSchema.Type;
-
-export const ConfigSchema = Schema.Struct({
-	accounts: Schema.Array(GmailAccountSchema),
-	spreadsheetId: Schema.String,
-	labelName: Schema.String.pipe(
-		Schema.optionalWith({ default: () => "synced-to-shared-expenses-sheet" }),
-	),
-	cronSchedule: Schema.String.pipe(
-		Schema.optionalWith({ default: () => "0 9 * * *" }),
-	),
-});
-
-export type Config = typeof ConfigSchema.Type;
-
 export const EmailSchema = Schema.Struct({
 	id: Schema.String,
 	snippet: Schema.String,
