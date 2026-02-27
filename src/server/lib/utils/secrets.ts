@@ -55,6 +55,8 @@ export class Secrets extends Effect.Service<Secrets>()("smaug/Secrets", {
 		};
 	}),
 }) {
+	static live = Secrets.Default;
+
 	static forKey(key: string) {
 		return {
 			Get: Effect.flatMap(Secrets, (s) => s.get(key)),

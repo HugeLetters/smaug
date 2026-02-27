@@ -58,7 +58,9 @@ export class OauthClient extends Effect.Service<OauthClient>()(
 			};
 		}),
 	},
-) {}
+) {
+	static live = OauthClient.Default;
+}
 
 export enum Scope {
 	GmailModify = "https://www.googleapis.com/auth/gmail.modify",
