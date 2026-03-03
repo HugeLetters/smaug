@@ -4,22 +4,20 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import type { gmail_v1 } from "googleapis";
+import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 
 const ME = "me";
 
-export class MailConfig extends Effect.Service<MailConfig>()(
-	"smaug/mail-sync/MailConfig",
-	{
-		effect: Effect.fn(function* (config: { labelName: string }) {
-			// const labelId = yield* ensureLabel(config.labelName);
-			return {
-				labelName: config.labelName,
-				labelId: "",
-			};
-		}),
-	},
-) {}
+export const EnsureMailLabel = Effect.gen(function* () {
+	const config = yield* AppConfig;
+
+	yield* ensureLabel({
+		name: config.mail.labelName,
+		bg: "#16a765",
+		text: "#ffffff",
+	});
+});
 
 interface Label {
 	readonly name: string;
@@ -27,10 +25,7 @@ interface Label {
 	readonly text: NonNullable<gmail_v1.Schema$LabelColor["textColor"]>;
 }
 
-// TODO gmail-sync | i dont want to fetch this every time we process a mail | by Evgenii Perminov at Thu, 26 Feb 2026 22:24:13 GMT
-export const ensureLabel = Effect.fn("getOrCreateLabel")(function* (
-	label: Label,
-) {
+const ensureLabel = Effect.fn(function* (label: Label) {
 	const gmail = yield* Google.Gmail.GmailClient;
 
 	const foundLabel = yield* gmail
@@ -41,8 +36,7 @@ export const ensureLabel = Effect.fn("getOrCreateLabel")(function* (
 		);
 
 	if (foundLabel) {
-		console.log(foundLabel);
-		// TODO gmail-sync | sync label config | by Evgenii Perminov at Fri, 27 Feb 2026 02:00:46 GMT
+		// TODO gmail-sync | sync label config - bg/text if gmail data doesnt match | by Evgenii Perminov at Fri, 27 Feb 2026 02:00:46 GMT
 		const foundId = foundLabel.id;
 		if (!foundId) {
 			return yield* MailError.fail("Found Label does not have an ID attached");
@@ -77,21 +71,26 @@ export const ensureLabel = Effect.fn("getOrCreateLabel")(function* (
 });
 
 export const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(
-	function* (labelId: string) {
+	function* (query: Google.Gmail.Query.Query | null) {
+		const config = yield* AppConfig;
 		// TODO gmail-sync | bank filter + from date | by Evgenii Perminov at Thu, 26 Feb 2026 22:28:58 GMT
-		// const query = Google.Gmail.Query.not(Google.Gmail.Query.label(labelId));
-		const query = Google.Gmail.Query.build((q) => {
-			return q.not(q.label(labelId));
+		const finalQuery = Google.Gmail.Query.build((q) => {
+			const baseQuery = q.not(q.label(config.mail.labelName));
+			if (query === null) {
+				return baseQuery;
+			}
+
+			return q.and(baseQuery, query);
 		});
 
-		yield* Effect.log(Google.Gmail.Query.serialize(query));
+		yield* Effect.log(Google.Gmail.Query.serialize(finalQuery));
 
 		const gmail = yield* Google.Gmail.GmailClient;
 
 		const response = yield* gmail.use((client) =>
 			client.users.messages.list({
 				userId: ME,
-				q: Google.Gmail.Query.serialize(query),
+				q: Google.Gmail.Query.serialize(finalQuery),
 				maxResults: 10,
 			}),
 		);

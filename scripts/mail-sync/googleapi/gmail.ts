@@ -1,7 +1,6 @@
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
@@ -37,7 +36,7 @@ export class GmailClient extends Effect.Service<GmailClient>()(
 		}),
 	},
 ) {
-	static live = GmailClient.Default.pipe(Layer.provide(OauthClient.Default));
+	static live = GmailClient.Default;
 }
 
 export namespace Query {

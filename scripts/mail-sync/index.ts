@@ -10,18 +10,12 @@ import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Schedule from "effect/Schedule";
 import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 import { EnsureAuthClientAuthenticated } from "./auth";
-import type { AccountSecretConfig } from "./config";
+import { type AccountSecretConfig, AppConfig } from "./config";
 import { Google } from "./googleapi";
-import {
-	applyLabel,
-	ensureLabel,
-	getUnprocessedEmails,
-	MailConfig,
-} from "./mail";
+import { applyLabel, EnsureMailLabel, getUnprocessedEmails } from "./mail";
 import { parseEmail } from "./parser";
 import { appendTransactions } from "./sheets";
 import type { Transaction } from "./types";
@@ -102,10 +96,8 @@ const GmailSyncCommand = Command.make(
 		),
 	},
 	Effect.fn(function* ({ runOnce }) {
-		yield* EnsureAuthClientAuthenticated;
-
-		yield* ensureLabel("SMAUG_PROCESSED");
-		yield* getUnprocessedEmails("_").pipe(Effect.tap(Effect.log));
+		const m = yield* getUnprocessedEmails(null);
+		yield* Effect.log(m.map((m) => m.snippet.trim()));
 		const t = true;
 		if (t) {
 			return;
@@ -132,6 +124,26 @@ const CommandExecutorLive = BunCommandExecutor.layer.pipe(
 );
 const TerminalLive = BunTerminal.layer;
 
+const SecretsLive = Secrets.live("gmail-sync");
+const AppConfigLive = AppConfig.live.pipe(Layer.provide(SecretsLive));
+
+const OauthAuthenticated = Effect.gen(function* () {
+	const config = yield* AppConfig;
+	return Google.Oauth.OauthClient.live(
+		config.oauth.clientId,
+		config.oauth.clientSecret,
+	);
+}).pipe(
+	Layer.unwrapEffect,
+	Layer.tap((c) => EnsureAuthClientAuthenticated.pipe(Effect.provide(c))),
+	Layer.provide([AppConfigLive, SecretsLive, CommandExecutorLive]),
+);
+
+const GmailLive = Google.Gmail.GmailClient.live.pipe(
+	Layer.tap((c) => EnsureMailLabel.pipe(Effect.provide(c))),
+	Layer.provide([AppConfigLive, SecretsLive, OauthAuthenticated]),
+);
+
 const ConfigLive = Effect.gen(function* () {
 	const path = yield* Path.Path;
 
@@ -142,21 +154,12 @@ const ConfigLive = Effect.gen(function* () {
 	return Layer.setConfigProvider(provider);
 }).pipe(Layer.unwrapEffect, Layer.provide([PathLive, FileSystemLive]));
 
-const SecretsLive = Secrets.live("gmail-sync");
-const GmailLive = Google.Gmail.GmailClient.live.pipe(
-	Layer.provide(SecretsLive),
-);
-const OauthLive = Google.Oauth.OauthClient.live.pipe(
-	Layer.provide(SecretsLive),
-);
 const MainLive = Layer.mergeAll(
 	GmailLive,
-	OauthLive,
-	SecretsLive,
-	CommandExecutorLive,
 	FileSystemLive,
 	PathLive,
 	TerminalLive,
+	AppConfigLive,
 ).pipe(Layer.provideMerge(ConfigLive));
 
 cli(process.argv).pipe(Effect.provide(MainLive), BunRuntime.runMain);

@@ -1,7 +1,9 @@
+import * as Config from "effect/Config";
 import * as ConfigError from "effect/ConfigError";
 import * as Cron from "effect/Cron";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { dateTimeConfig } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 
 interface AccountConfig {
@@ -49,3 +51,46 @@ export const GetSpreadsheetId = Effect.gen(function* () {
 
 	return id;
 });
+
+const OauthConfig = Effect.gen(function* () {
+	const clientId = Config.string("client_id");
+	const oauth = yield* Config.all({
+		clientId,
+	}).pipe(Config.nested("oauth"));
+
+	const clientSecret = yield* Secrets.use((s) =>
+		s.getOrFail("google_client_secret"),
+	);
+
+	return {
+		...oauth,
+		clientSecret,
+	};
+});
+
+const MailConfig = Effect.gen(function* () {
+	const startDate = dateTimeConfig("start_date");
+	const labelName = Config.string("label_name");
+
+	return yield* Config.all({
+		startDate,
+		labelName,
+	}).pipe(Config.nested("mail"));
+});
+
+export class AppConfig extends Effect.Service<AppConfig>()(
+	"smaug/scripts/mail-sync/config/AppConfig",
+	{
+		effect: Effect.gen(function* () {
+			const oauth = yield* OauthConfig;
+			const mail = yield* MailConfig;
+
+			return {
+				mail,
+				oauth,
+			};
+		}).pipe(Effect.withSpan("AppConfig")),
+	},
+) {
+	static live = AppConfig.Default;
+}
