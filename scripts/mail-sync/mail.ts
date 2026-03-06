@@ -1,13 +1,8 @@
 import { pipe } from "effect";
-import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
-import * as Match from "effect/Match";
-import type { gmail_v1 } from "googleapis";
 import { AppConfig } from "./config";
 import { Google } from "./googleapi";
-
-const ME = "me";
 
 export const SetupMail = Effect.gen(function* () {
 	const config = yield* AppConfig;
@@ -44,7 +39,7 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 	const gmail = yield* Google.Gmail.GmailClient;
 
 	const foundLabel = yield* gmail
-		.use((client) => client.users.labels.list({ userId: ME }))
+		.use((client) => client.users.labels.list({ userId: Google.Gmail.ME }))
 		.pipe(
 			Effect.map((res) => res.data.labels ?? []),
 			Effect.map((res) => res.find((result) => result.name === label.name)),
@@ -65,7 +60,7 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 			yield* Effect.log(`Syncing label ${label.name} config`);
 			yield* gmail.use((client) =>
 				client.users.labels.patch({
-					userId: ME,
+					userId: Google.Gmail.ME,
 					id: foundId,
 					requestBody: {
 						color: {
@@ -82,7 +77,7 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 
 	const createdLabel = yield* gmail.use((client) =>
 		client.users.labels.create({
-			userId: ME,
+			userId: Google.Gmail.ME,
 			requestBody: {
 				name: label.name,
 				labelListVisibility: "labelShow",
@@ -105,16 +100,11 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 	return createdId;
 });
 
-interface Email {
-	readonly id: string;
-	readonly snippet: string;
-	readonly content: Content;
-}
-
 const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
 	query: Google.Gmail.Query.Query | null,
 ) {
 	const config = yield* AppConfig;
+
 	const finalQuery = Google.Gmail.Query.build((q) => {
 		const AfterStart = q.after(config.mail.startDate);
 		const NotProcessed = q.not(q.label(config.mail.labelName));
@@ -133,47 +123,7 @@ const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
 		return q.and(baseQuery, query);
 	});
 
-	const gmail = yield* Google.Gmail.GmailClient;
-
-	const response = yield* gmail.use((client) =>
-		client.users.messages.list({
-			userId: ME,
-			q: Google.Gmail.Query.serialize(finalQuery),
-			maxResults: 10,
-		}),
-	);
-
-	return yield* pipe(
-		response.data.messages ?? [],
-		Effect.forEach(
-			Effect.fnUntraced(function* (message) {
-				const id = message.id;
-				if (!id) {
-					return;
-				}
-
-				const fullMessage = yield* gmail.use((client) =>
-					client.users.messages.get({
-						userId: ME,
-						id,
-						format: "full",
-					}),
-				);
-
-				const content = extractEmailContentMaybe(
-					fullMessage.data.payload ?? null,
-				);
-				const email: Email = {
-					id,
-					snippet: fullMessage.data.snippet ?? "",
-					content,
-				};
-
-				return email;
-			}),
-		),
-		Effect.map(Arr.filter((v) => v !== undefined)),
-	);
+	return yield* Google.Gmail.searchEmails(finalQuery, 10);
 });
 
 const applyLabel = Effect.fn("applyLabel")(function* (
@@ -184,7 +134,7 @@ const applyLabel = Effect.fn("applyLabel")(function* (
 
 	yield* gmail.use((client) =>
 		client.users.messages.modify({
-			userId: ME,
+			userId: Google.Gmail.ME,
 			id: emailId,
 			requestBody: {
 				addLabelIds: [labelId],
@@ -192,69 +142,6 @@ const applyLabel = Effect.fn("applyLabel")(function* (
 		}),
 	);
 });
-
-interface Content {
-	readonly plain: string | null;
-	readonly html: string | null;
-}
-
-function extractEmailContent(payload: gmail_v1.Schema$MessagePart): Content {
-	if (payload.mimeType === "text/html" && payload.body?.data) {
-		return {
-			html: decodeBase64(payload.body.data),
-			plain: null,
-		};
-	}
-
-	if (payload.mimeType === "text/plain" && payload.body?.data) {
-		return {
-			plain: decodeBase64(payload.body.data),
-			html: null,
-		};
-	}
-
-	if (payload.parts) {
-		return pipe(
-			payload.parts,
-			Arr.map(extractEmailContent),
-			Arr.reduce({ html: null, plain: null }, (result, part): Content => {
-				return {
-					html: concatMaybe(result.html, part.html),
-					plain: concatMaybe(result.plain, part.plain),
-				};
-			}),
-		);
-	}
-
-	return {
-		html: null,
-		plain: null,
-	};
-}
-
-function extractEmailContentMaybe(
-	payload: gmail_v1.Schema$MessagePart | null,
-): Content {
-	if (!payload) {
-		return { html: null, plain: null };
-	}
-
-	return extractEmailContent(payload);
-}
-
-function concatMaybe(a: string | null, b: string | null) {
-	return Match.value([a, b]).pipe(
-		Match.when([Match.string, null], ([a, _]) => a),
-		Match.when([null, Match.string], ([_, b]) => b),
-		Match.when([Match.string, Match.string], ([a, b]) => `${a}${b}`),
-		Match.when([null, null], () => null),
-		Match.exhaustive,
-	);
-}
-
-function decodeBase64(base64: string) {
-	return Buffer.from(base64, "base64").toString("utf-8");
-}
 
 export class MailError extends Data.TaggedError("MailError")<{
 	readonly message: string;

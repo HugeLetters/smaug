@@ -1,6 +1,9 @@
+import { pipe } from "effect";
+import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Match from "effect/Match";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
@@ -184,3 +187,215 @@ export namespace Query {
 		return DateTime.formatIsoDateUtc(timestamp).replaceAll("-", "/");
 	}
 }
+
+export interface Email {
+	readonly id: string;
+	readonly snippet: string;
+	readonly content: Content;
+	readonly from: string | null;
+	readonly forwardedBy: string | null;
+}
+
+export const searchEmails = Effect.fn("searchEmails")(function* (
+	query: Query.Query,
+	limit: number,
+) {
+	const gmail = yield* GmailClient;
+
+	const response = yield* gmail.use((client) =>
+		client.users.messages.list({
+			userId: ME,
+			q: Query.serialize(query),
+			maxResults: limit,
+		}),
+	);
+
+	return yield* pipe(
+		response.data.messages ?? [],
+		Effect.forEach(
+			Effect.fnUntraced(function* (message) {
+				const id = message.id;
+				if (!id) {
+					return;
+				}
+
+				const fullMessage = yield* gmail.use((client) =>
+					client.users.messages.get({
+						userId: ME,
+						id,
+						format: "full",
+					}),
+				);
+
+				const payload = fullMessage.data.payload ?? null;
+				const content = extractEmailContentMaybe(payload);
+				const sender = extractSender(payload, content);
+				const email: Email = {
+					id,
+					snippet: fullMessage.data.snippet ?? "",
+					content,
+					from: sender.from,
+					forwardedBy: sender.forwardedBy,
+				};
+
+				return email;
+			}),
+		),
+		Effect.map(Arr.filter((v) => v !== undefined)),
+	);
+});
+
+interface Content {
+	readonly plain: string | null;
+	readonly html: string | null;
+}
+
+function extractEmailContent(payload: gmail_v1.Schema$MessagePart): Content {
+	if (payload.mimeType === "text/html" && payload.body?.data) {
+		return {
+			html: decodeBase64(payload.body.data),
+			plain: null,
+		};
+	}
+
+	if (payload.mimeType === "text/plain" && payload.body?.data) {
+		return {
+			plain: decodeBase64(payload.body.data),
+			html: null,
+		};
+	}
+
+	if (payload.parts) {
+		return pipe(
+			payload.parts,
+			Arr.map(extractEmailContent),
+			Arr.reduce({ html: null, plain: null }, (result, part): Content => {
+				return {
+					html: concatMaybe(result.html, part.html),
+					plain: concatMaybe(result.plain, part.plain),
+				};
+			}),
+		);
+	}
+
+	return {
+		html: null,
+		plain: null,
+	};
+}
+
+function extractEmailContentMaybe(
+	payload: gmail_v1.Schema$MessagePart | null,
+): Content {
+	if (!payload) {
+		return { html: null, plain: null };
+	}
+
+	return extractEmailContent(payload);
+}
+
+interface Sender {
+	readonly from: string | null;
+	readonly forwardedBy: string | null;
+}
+
+function extractSender(
+	payload: gmail_v1.Schema$MessagePart | null,
+	content: Content,
+): Sender {
+	const directSender = getHeader(payload, "from");
+
+	const subject = getHeader(payload, "subject");
+	if (!isForwardedSubject(subject)) {
+		return {
+			from: directSender,
+			forwardedBy: null,
+		};
+	}
+
+	const forwardedFrom = extractForwardedFrom(content);
+	if (!forwardedFrom) {
+		return {
+			from: directSender,
+			forwardedBy: null,
+		};
+	}
+
+	return {
+		from: forwardedFrom,
+		forwardedBy: directSender,
+	};
+}
+
+function getHeader(
+	payload: gmail_v1.Schema$MessagePart | null,
+	name: string,
+): string | null {
+	const normalizedName = name.toLowerCase();
+	const header = payload?.headers?.find(
+		(header) => header.name?.toLowerCase() === normalizedName,
+	);
+
+	const value = header?.value?.trim();
+	if (!value) {
+		return null;
+	}
+
+	return value;
+}
+
+function isForwardedSubject(subject: string | null): boolean {
+	if (!subject) {
+		return false;
+	}
+
+	const normalized = subject.trim().toLowerCase();
+	return normalized.startsWith("fwd:") || normalized.startsWith("fw:");
+}
+
+function extractForwardedFrom(content: Content): string | null {
+	const text = content.plain ?? htmlToPlain(content.html);
+	if (!text) {
+		return null;
+	}
+
+	const normalizedText = text.replace(/\r\n/g, "\n");
+	const maybeForwardedBlock = normalizedText.match(
+		/-{2,}\s*forwarded message\s*-{2,}([\s\S]*)/i,
+	);
+	const searchText = maybeForwardedBlock?.[1] ?? normalizedText;
+	const fromLine = searchText.match(/^\s*>?\s*from:\s*(.+)$/im)?.[1]?.trim();
+
+	if (!fromLine) {
+		return null;
+	}
+
+	return fromLine;
+}
+
+function htmlToPlain(html: string | null): string | null {
+	if (!html) {
+		return null;
+	}
+
+	return html
+		.replace(/<[^>]*>/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function concatMaybe(a: string | null, b: string | null) {
+	return Match.value([a, b]).pipe(
+		Match.when([Match.string, null], ([a, _]) => a),
+		Match.when([null, Match.string], ([_, b]) => b),
+		Match.when([Match.string, Match.string], ([a, b]) => `${a}${b}`),
+		Match.when([null, null], () => null),
+		Match.exhaustive,
+	);
+}
+
+function decodeBase64(base64: string) {
+	return Buffer.from(base64, "base64").toString("utf-8");
+}
+
+export const ME = "me";
