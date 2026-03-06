@@ -1,15 +1,16 @@
-import { pipe } from "effect";
+import { pipe, type Types } from "effect";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
+import type { Mutable } from "effect/Types";
 import type { gmail_v1 } from "googleapis";
 import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 
 const ME = "me";
 
-export const EnsureMailLabel = Effect.gen(function* () {
+export const SetupMail = Effect.gen(function* () {
 	const config = yield* AppConfig;
 
 	yield* Effect.all(
@@ -85,21 +86,33 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 	return createdId;
 });
 
+interface Email {
+	readonly id: string;
+	readonly snippet: string;
+	readonly content: Content;
+}
+
 const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
 	query: Google.Gmail.Query.Query | null,
 ) {
 	const config = yield* AppConfig;
-	// TODO gmail-sync | bank filter + from date | by Evgenii Perminov at Thu, 26 Feb 2026 22:28:58 GMT
 	const finalQuery = Google.Gmail.Query.build((q) => {
-		const baseQuery = q.not(q.label(config.mail.labelName));
+		const AfterStart = q.after(config.mail.startDate);
+		const NotProcessed = q.not(q.label(config.mail.labelName));
+		const NotFailedToProcess = q.not(q.label(config.mail.failedLabelName));
+
+		const baseQuery = pipe(
+			AfterStart,
+			(_) => q.and(_, NotProcessed),
+			(_) => q.and(_, NotFailedToProcess),
+		);
+
 		if (query === null) {
 			return baseQuery;
 		}
 
 		return q.and(baseQuery, query);
 	});
-
-	yield* Effect.log(Google.Gmail.Query.serialize(finalQuery));
 
 	const gmail = yield* Google.Gmail.GmailClient;
 
@@ -128,11 +141,16 @@ const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
 					}),
 				);
 
-				return {
+				const content = extractEmailContentMaybe(
+					fullMessage.data.payload ?? null,
+				);
+				const email: Email = {
 					id,
 					snippet: fullMessage.data.snippet ?? "",
-					payload: extractEmailContentMaybe(fullMessage.data.payload ?? null),
+					content,
 				};
+
+				return email;
 			}),
 		),
 		Effect.map(Arr.filter((v) => v !== undefined)),
@@ -156,37 +174,12 @@ const applyLabel = Effect.fn("applyLabel")(function* (
 	);
 });
 
-const getEmailContent = Effect.fn("getEmailContent")(function* (
-	emailId: string,
-) {
-	const gmail = yield* Google.Gmail.GmailClient;
-
-	const message = yield* gmail.use((client) =>
-		client.users.messages.get({
-			// TODO gmail-sync | why do I need userId? | by Evgenii Perminov at Thu, 26 Feb 2026 22:54:26 GMT
-			userId: ME,
-			id: emailId,
-			format: "full",
-		}),
-	);
-
-	const payload = message.data.payload;
-	if (!payload) {
-		return "";
-	}
-
-	const text = extractEmailContent(payload);
-	return text;
-});
-
-interface EmailContent {
+interface Content {
 	readonly plain: string | null;
 	readonly html: string | null;
 }
 
-function extractEmailContent(
-	payload: gmail_v1.Schema$MessagePart,
-): EmailContent {
+function extractEmailContent(payload: gmail_v1.Schema$MessagePart): Content {
 	if (payload.mimeType === "text/html" && payload.body?.data) {
 		return {
 			html: decodeBase64(payload.body.data),
@@ -205,7 +198,7 @@ function extractEmailContent(
 		return pipe(
 			payload.parts,
 			Arr.map(extractEmailContent),
-			Arr.reduce({ html: null, plain: null }, (result, part): EmailContent => {
+			Arr.reduce({ html: null, plain: null }, (result, part): Content => {
 				return {
 					html: concatMaybe(result.html, part.html),
 					plain: concatMaybe(result.plain, part.plain),
@@ -222,7 +215,7 @@ function extractEmailContent(
 
 function extractEmailContentMaybe(
 	payload: gmail_v1.Schema$MessagePart | null,
-): EmailContent {
+): Content {
 	if (!payload) {
 		return { html: null, plain: null };
 	}

@@ -18,7 +18,7 @@ const RequiredScopes = [
 	Google.Oauth.Scope.GmailRead,
 ];
 
-export const EnsureAuthClientAuthenticated = Effect.gen(function* () {
+export const SetupAuth = Effect.gen(function* () {
 	const oauth = yield* Google.Oauth.OauthClient;
 
 	const isClientAccessValid = yield* oauth.GetCredentials.pipe(
