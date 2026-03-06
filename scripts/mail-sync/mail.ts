@@ -1,9 +1,8 @@
-import { pipe, type Types } from "effect";
+import { pipe } from "effect";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
-import type { Mutable } from "effect/Types";
 import type { gmail_v1 } from "googleapis";
 import { AppConfig } from "./config";
 import { Google } from "./googleapi";
@@ -52,10 +51,30 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 		);
 
 	if (foundLabel) {
-		// TODO gmail-sync | sync label config - bg/text if gmail data doesnt match | by Evgenii Perminov at Fri, 27 Feb 2026 02:00:46 GMT
 		const foundId = foundLabel.id;
 		if (!foundId) {
 			return yield* MailError.fail("Found Label does not have an ID attached");
+		}
+
+		const foundColor = foundLabel.color;
+		const hasConfigMismatch =
+			foundColor?.backgroundColor !== label.bg ||
+			foundColor?.textColor !== label.text;
+
+		if (hasConfigMismatch) {
+			yield* Effect.log(`Syncing label ${label.name} config`);
+			yield* gmail.use((client) =>
+				client.users.labels.patch({
+					userId: ME,
+					id: foundId,
+					requestBody: {
+						color: {
+							backgroundColor: label.bg,
+							textColor: label.text,
+						},
+					},
+				}),
+			);
 		}
 
 		return foundId;
