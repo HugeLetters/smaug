@@ -12,17 +12,32 @@ const ME = "me";
 export const EnsureMailLabel = Effect.gen(function* () {
 	const config = yield* AppConfig;
 
-	yield* ensureLabel({
-		name: config.mail.labelName,
-		bg: "#16a765",
-		text: "#ffffff",
-	});
+	yield* Effect.all(
+		[
+			ensureLabel({
+				name: config.mail.labelName,
+				bg: "#16a765",
+				text: "#ffffff",
+			}),
+			ensureLabel({
+				name: config.mail.failedLabelName,
+				bg: "#89d3b2",
+				text: "#ffffff",
+			}),
+		],
+		{ concurrency: "unbounded" },
+	);
+});
+
+export const ProcessMailBatch = Effect.gen(function* () {
+	const m = yield* getUnprocessedEmails(null);
+	yield* Effect.log(m.map((m) => m.snippet.trim()));
 });
 
 interface Label {
 	readonly name: string;
-	readonly bg: NonNullable<gmail_v1.Schema$LabelColor["backgroundColor"]>;
-	readonly text: NonNullable<gmail_v1.Schema$LabelColor["textColor"]>;
+	readonly bg: ValidLabelColor;
+	readonly text: ValidLabelColor;
 }
 
 const ensureLabel = Effect.fn(function* (label: Label) {
@@ -70,61 +85,61 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 	return createdId;
 });
 
-export const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(
-	function* (query: Google.Gmail.Query.Query | null) {
-		const config = yield* AppConfig;
-		// TODO gmail-sync | bank filter + from date | by Evgenii Perminov at Thu, 26 Feb 2026 22:28:58 GMT
-		const finalQuery = Google.Gmail.Query.build((q) => {
-			const baseQuery = q.not(q.label(config.mail.labelName));
-			if (query === null) {
-				return baseQuery;
-			}
+const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
+	query: Google.Gmail.Query.Query | null,
+) {
+	const config = yield* AppConfig;
+	// TODO gmail-sync | bank filter + from date | by Evgenii Perminov at Thu, 26 Feb 2026 22:28:58 GMT
+	const finalQuery = Google.Gmail.Query.build((q) => {
+		const baseQuery = q.not(q.label(config.mail.labelName));
+		if (query === null) {
+			return baseQuery;
+		}
 
-			return q.and(baseQuery, query);
-		});
+		return q.and(baseQuery, query);
+	});
 
-		yield* Effect.log(Google.Gmail.Query.serialize(finalQuery));
+	yield* Effect.log(Google.Gmail.Query.serialize(finalQuery));
 
-		const gmail = yield* Google.Gmail.GmailClient;
+	const gmail = yield* Google.Gmail.GmailClient;
 
-		const response = yield* gmail.use((client) =>
-			client.users.messages.list({
-				userId: ME,
-				q: Google.Gmail.Query.serialize(finalQuery),
-				maxResults: 10,
-			}),
-		);
+	const response = yield* gmail.use((client) =>
+		client.users.messages.list({
+			userId: ME,
+			q: Google.Gmail.Query.serialize(finalQuery),
+			maxResults: 10,
+		}),
+	);
 
-		return yield* pipe(
-			response.data.messages ?? [],
-			Effect.forEach(
-				Effect.fnUntraced(function* (message) {
-					const id = message.id;
-					if (!id) {
-						return;
-					}
+	return yield* pipe(
+		response.data.messages ?? [],
+		Effect.forEach(
+			Effect.fnUntraced(function* (message) {
+				const id = message.id;
+				if (!id) {
+					return;
+				}
 
-					const fullMessage = yield* gmail.use((client) =>
-						client.users.messages.get({
-							userId: ME,
-							id,
-							format: "full",
-						}),
-					);
-
-					return {
+				const fullMessage = yield* gmail.use((client) =>
+					client.users.messages.get({
+						userId: ME,
 						id,
-						snippet: fullMessage.data.snippet ?? "",
-						payload: extractEmailContentMaybe(fullMessage.data.payload ?? null),
-					};
-				}),
-			),
-			Effect.map(Arr.filter((v) => v !== undefined)),
-		);
-	},
-);
+						format: "full",
+					}),
+				);
 
-export const applyLabel = Effect.fn("applyLabel")(function* (
+				return {
+					id,
+					snippet: fullMessage.data.snippet ?? "",
+					payload: extractEmailContentMaybe(fullMessage.data.payload ?? null),
+				};
+			}),
+		),
+		Effect.map(Arr.filter((v) => v !== undefined)),
+	);
+});
+
+const applyLabel = Effect.fn("applyLabel")(function* (
 	emailId: string,
 	labelId: string,
 ) {
@@ -141,7 +156,7 @@ export const applyLabel = Effect.fn("applyLabel")(function* (
 	);
 });
 
-export const getEmailContent = Effect.fn("getEmailContent")(function* (
+const getEmailContent = Effect.fn("getEmailContent")(function* (
 	emailId: string,
 ) {
 	const gmail = yield* Google.Gmail.GmailClient;
@@ -225,7 +240,7 @@ function concatMaybe(a: string | null, b: string | null) {
 	);
 }
 
-export function decodeBase64(base64: string) {
+function decodeBase64(base64: string) {
 	return Buffer.from(base64, "base64").toString("utf-8");
 }
 
@@ -237,3 +252,107 @@ export class MailError extends Data.TaggedError("MailError")<{
 		return new MailError({ message, cause });
 	}
 }
+
+type ValidLabelColor =
+	| "#000000"
+	| "#434343"
+	| "#666666"
+	| "#999999"
+	| "#cccccc"
+	| "#efefef"
+	| "#f3f3f3"
+	| "#ffffff"
+	| "#fb4c2f"
+	| "#ffad47"
+	| "#fad165"
+	| "#16a766"
+	| "#43d692"
+	| "#4a86e8"
+	| "#a479e2"
+	| "#f691b3"
+	| "#f6c5be"
+	| "#ffe6c7"
+	| "#fef1d1"
+	| "#b9e4d0"
+	| "#c6f3de"
+	| "#c9daf8"
+	| "#e4d7f5"
+	| "#fcdee8"
+	| "#efa093"
+	| "#ffd6a2"
+	| "#fce8b3"
+	| "#89d3b2"
+	| "#a0eac9"
+	| "#a4c2f4"
+	| "#d0bcf1"
+	| "#fbc8d9"
+	| "#e66550"
+	| "#ffbc6b"
+	| "#fcda83"
+	| "#44b984"
+	| "#68dfa9"
+	| "#6d9eeb"
+	| "#b694e8"
+	| "#f7a7c0"
+	| "#cc3a21"
+	| "#eaa041"
+	| "#f2c960"
+	| "#149e60"
+	| "#3dc789"
+	| "#3c78d8"
+	| "#8e63ce"
+	| "#e07798"
+	| "#ac2b16"
+	| "#cf8933"
+	| "#d5ae49"
+	| "#0b804b"
+	| "#2a9c68"
+	| "#285bac"
+	| "#653e9b"
+	| "#b65775"
+	| "#822111"
+	| "#a46a21"
+	| "#aa8831"
+	| "#076239"
+	| "#1a764d"
+	| "#1c4587"
+	| "#41236d"
+	| "#83334c"
+	| "#464646"
+	| "#e7e7e7"
+	| "#0d3472"
+	| "#b6cff5"
+	| "#0d3b44"
+	| "#98d7e4"
+	| "#3d188e"
+	| "#e3d7ff"
+	| "#711a36"
+	| "#fbd3e0"
+	| "#8a1c0a"
+	| "#f2b2a8"
+	| "#7a2e0b"
+	| "#ffc8af"
+	| "#7a4706"
+	| "#ffdeb5"
+	| "#594c05"
+	| "#fbe983"
+	| "#684e07"
+	| "#fdedc1"
+	| "#0b4f30"
+	| "#b3efd3"
+	| "#04502e"
+	| "#a2dcc1"
+	| "#c2c2c2"
+	| "#4986e7"
+	| "#2da2bb"
+	| "#b99aff"
+	| "#994a64"
+	| "#f691b2"
+	| "#ff7537"
+	| "#ffad46"
+	| "#662e37"
+	| "#ebdbde"
+	| "#cca6ac"
+	| "#094228"
+	| "#42d692"
+	| "#16a765";

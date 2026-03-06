@@ -69,12 +69,26 @@ const OauthConfig = Effect.gen(function* () {
 });
 
 const MailConfig = Effect.gen(function* () {
-	const startDate = dateTimeConfig("start_date");
-	const labelName = Config.string("label_name");
+	const startDate = dateTimeConfig("start_date").pipe(
+		Config.withDescription(
+			"Will only process emails after this date (inclusive)",
+		),
+	);
+	const labelName = Config.string("label_name").pipe(
+		Config.withDescription(
+			"Gmail label to use to mark emails which parser processed",
+		),
+	);
+	const failedLabelName = Config.string("failed_label_name").pipe(
+		Config.withDescription(
+			"Gmail label to use to mark emails which parser failed to process",
+		),
+	);
 
 	return yield* Config.all({
 		startDate,
 		labelName,
+		failedLabelName,
 	}).pipe(Config.nested("mail"));
 });
 
