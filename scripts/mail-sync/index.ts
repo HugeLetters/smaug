@@ -8,18 +8,18 @@ import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schedule from "effect/Schedule";
 import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
+import { Accounts } from "./account.config";
 import { SetupAuth } from "./auth";
 import { AppConfig } from "./config";
 import { Google } from "./googleapi";
-import { ProcessMailBatch, SetupMail } from "./mail";
+import { processMailBatch } from "./mail";
 
 const Sync = Effect.gen(function* () {
 	yield* SetupAuth;
-	yield* SetupMail;
-
-	yield* ProcessMailBatch;
+	yield* processMailBatch(Accounts);
 });
 
 const GmailSyncCommand = Command.make(
@@ -30,10 +30,10 @@ const GmailSyncCommand = Command.make(
 		),
 	},
 	Effect.fn(function* ({ runOnce }) {
-		const task = Sync;
+		let task = Sync;
 
 		if (!runOnce) {
-			// task = task.pipe(Effect.schedule(Schedule.cron("0 9 * * *")));
+			task = task.pipe(Effect.schedule(Schedule.cron("0 9 * * *")));
 		}
 
 		yield* task;

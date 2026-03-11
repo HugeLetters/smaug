@@ -1,32 +1,71 @@
 import { pipe } from "effect";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Iterable from "effect/Iterable";
+import { type Account, parseTransactionFromEmail } from "./account";
 import { AppConfig } from "./config";
 import { Google } from "./googleapi";
+import type { Gmail } from "./googleapi/index.export";
 
-export const SetupMail = Effect.gen(function* () {
-	const config = yield* AppConfig;
+class LabelConfig extends Effect.Service<LabelConfig>()(
+	"smaug/scripts/mail-sync/mail/LabelConfig",
+	{
+		effect: Effect.gen(function* () {
+			const config = yield* AppConfig;
 
-	yield* Effect.all(
-		[
-			ensureLabel({
+			const label = yield* ensureLabel({
 				name: config.mail.labelName,
 				bg: "#16a765",
 				text: "#ffffff",
-			}),
-			ensureLabel({
-				name: config.mail.failedLabelName,
-				bg: "#89d3b2",
-				text: "#ffffff",
-			}),
-		],
-		{ concurrency: "unbounded" },
-	);
-});
+			});
 
-export const ProcessMailBatch = Effect.gen(function* () {
-	const m = yield* getUnprocessedEmails(null);
-	yield* Effect.log(m.map((m) => m.snippet.trim()));
+			return {
+				label,
+			};
+		}),
+	},
+) {}
+
+export const processMailBatch = Effect.fn("processMailBatch")(
+	function* (accounts: ReadonlyArray<Account>) {
+		const query = resolveAccountsQuery(accounts);
+		const emails = yield* getUnprocessedEmails(query);
+
+		yield* Effect.forEach(emails, (email) => processMail(accounts, email), {
+			concurrency: "unbounded",
+		});
+	},
+	// before each batch ensure labels exist
+	Effect.provide(LabelConfig.Default),
+);
+
+function resolveAccountsQuery(accounts: ReadonlyArray<Account>) {
+	return pipe(
+		accounts,
+		Iterable.map((account) => account.query),
+		Iterable.filter((query) => query !== null),
+		Iterable.reduce(null, (acc: Gmail.Query.Query | null, query) => {
+			if (acc === null) {
+				return query;
+			}
+
+			return Google.Gmail.Query.or(acc, query);
+		}),
+	);
+}
+
+// TODO gmail-sync | some locking mechanism to prevent double-counting | by Evgenii Perminov at Mon, 09 Mar 2026 21:06:50 GMT
+const processMail = Effect.fn("processMail")(function* (
+	accounts: ReadonlyArray<Account>,
+	email: Google.Gmail.Email,
+) {
+	const transaction = yield* parseTransactionFromEmail(accounts, email);
+
+	// placeholder for saving transaction data
+	yield* Effect.log(transaction);
+
+	const config = yield* LabelConfig;
+	yield* applyLabel(email.id, config.label);
 });
 
 interface Label {
@@ -108,13 +147,8 @@ const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
 	const finalQuery = Google.Gmail.Query.build((q) => {
 		const AfterStart = q.after(config.mail.startDate);
 		const NotProcessed = q.not(q.label(config.mail.labelName));
-		const NotFailedToProcess = q.not(q.label(config.mail.failedLabelName));
 
-		const baseQuery = pipe(
-			AfterStart,
-			(_) => q.and(_, NotProcessed),
-			(_) => q.and(_, NotFailedToProcess),
-		);
+		const baseQuery = pipe(AfterStart, (_) => q.and(_, NotProcessed));
 
 		if (query === null) {
 			return baseQuery;

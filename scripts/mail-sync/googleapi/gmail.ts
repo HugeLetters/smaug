@@ -4,6 +4,7 @@ import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
+import * as Option from "effect/Option";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
@@ -194,6 +195,8 @@ export interface Email {
 	readonly content: Content;
 	readonly from: string | null;
 	readonly forwardedBy: string | null;
+	readonly subject: string | null;
+	readonly receivedAt: DateTime.DateTime | null;
 }
 
 export const searchEmails = Effect.fn("searchEmails")(function* (
@@ -230,12 +233,16 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 				const payload = fullMessage.data.payload ?? null;
 				const content = extractEmailContentMaybe(payload);
 				const sender = extractSender(payload, content);
+				const subject = getHeader(payload, "subject");
+				const receivedAt = parseInternalDate(fullMessage.data.internalDate);
 				const email: Email = {
 					id,
 					snippet: fullMessage.data.snippet ?? "",
 					content,
 					from: sender.from,
 					forwardedBy: sender.forwardedBy,
+					subject,
+					receivedAt,
 				};
 
 				return email;
@@ -371,6 +378,15 @@ function extractForwardedFrom(content: Content): string | null {
 	}
 
 	return fromLine;
+}
+
+function parseInternalDate(internalDate: string | null | undefined) {
+	return pipe(
+		internalDate,
+		Number,
+		DateTime.make,
+		Option.getOrElse(() => null),
+	);
 }
 
 function htmlToPlain(html: string | null): string | null {

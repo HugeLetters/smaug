@@ -11,35 +11,31 @@ export const parseTransactionFromEmail = Effect.fn("parseTransactionFromEmail")(
 		let failures = Chunk.empty<ParserFailureWithMeta>();
 
 		for (const account of accounts) {
-			for (const bank of account.banks) {
-				for (const parser of bank.parsers) {
-					const attempt = yield* parser.parse(email).pipe(Effect.either);
+			for (const parser of account.parsers) {
+				const attempt = yield* parser.parse(email).pipe(Effect.either);
 
-					if (Either.isRight(attempt)) {
-						const transaction: Transaction = {
-							...attempt.right,
+				if (Either.isRight(attempt)) {
+					const transaction: Transaction = {
+						...attempt.right,
+						by: account,
+						meta: {
+							parserId: parser.parserId,
+						},
+					};
+					return transaction;
+				}
+
+				const error = attempt.left;
+				if (error._tag === "ParserFailure") {
+					failures = failures.pipe(
+						Chunk.append<ParserFailureWithMeta>({
+							error: error,
 							meta: {
 								accountId: account.accountId,
-								bankId: bank.bankId,
 								parserId: parser.parserId,
 							},
-						};
-						return transaction;
-					}
-
-					const error = attempt.left;
-					if (error._tag === "ParserFailure") {
-						failures = failures.pipe(
-							Chunk.append<ParserFailureWithMeta>({
-								error: error,
-								meta: {
-									accountId: account.accountId,
-									bankId: bank.bankId,
-									parserId: parser.parserId,
-								},
-							}),
-						);
-					}
+						}),
+					);
 				}
 			}
 		}
@@ -54,21 +50,35 @@ export const parseTransactionFromEmail = Effect.fn("parseTransactionFromEmail")(
 		});
 	},
 );
+export enum TransactionCategory {
+	Grocery = "Grocery",
+	/** Restaraunts/take-out/food delivery */
+	Food = "Food",
+	/** Rent, phone bills, internet */
+	RentAndUtilities = "RentAndUtilities",
+	/** Public transport, taxi */
+	Transportation = "Transportation",
+	Clothing = "Clothing",
+	/** Cinema, Travel */
+	Entertainment = "Entertainment",
+	Charity = "Charity",
+	Other = "Other",
+}
 
 export interface TransactionData {
 	readonly date: DateTime.DateTime;
+	readonly category: TransactionCategory;
+	/** In local currency */
 	readonly amount: number;
-	readonly currency: string;
 	readonly merchant: string;
 }
 
 export interface TransactionMeta {
-	readonly accountId: string;
-	readonly bankId: string;
 	readonly parserId: string;
 }
 
 export interface Transaction extends TransactionData {
+	readonly by: Account;
 	readonly meta: TransactionMeta;
 }
 
@@ -79,15 +89,10 @@ export interface Parser {
 	) => Effect.Effect<TransactionData, ParserError>;
 }
 
-export interface Bank {
-	readonly bankId: string;
-	readonly parsers: ReadonlyArray<Parser>;
-}
-
 export interface Account {
 	readonly accountId: string;
 	readonly query: Google.Gmail.Query.Query | null;
-	readonly banks: ReadonlyArray<Bank>;
+	readonly parsers: ReadonlyArray<Parser>;
 }
 
 export class ParserSkip extends Data.TaggedError("ParserSkip") {}
@@ -109,7 +114,6 @@ export interface ParserFailureWithMeta {
 
 export interface ParserErrorMeta {
 	readonly accountId: string;
-	readonly bankId: string;
 	readonly parserId: string;
 }
 

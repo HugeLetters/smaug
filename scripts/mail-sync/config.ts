@@ -79,16 +79,10 @@ const MailConfig = Effect.gen(function* () {
 			"Gmail label to use to mark emails which parser processed",
 		),
 	);
-	const failedLabelName = Config.string("failed_label_name").pipe(
-		Config.withDescription(
-			"Gmail label to use to mark emails which parser failed to process",
-		),
-	);
 
 	return yield* Config.all({
 		startDate,
 		labelName,
-		failedLabelName,
 	}).pipe(Config.nested("mail"));
 });
 
