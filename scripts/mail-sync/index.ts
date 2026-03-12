@@ -1,11 +1,11 @@
 import * as Command from "@effect/cli/Command";
 import * as Options from "@effect/cli/Options";
-import * as Path from "@effect/platform/Path";
 import { BunRuntime } from "@effect/platform-bun";
 import * as BunCommandExecutor from "@effect/platform-bun/BunCommandExecutor";
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
+import * as Path from "@effect/platform/Path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -13,7 +13,7 @@ import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 import { Accounts } from "./account.config";
 import { SetupAuth } from "./auth";
-import { AppConfig } from "./config";
+import { AppConfig, JsonDb, Storage } from "./config";
 import { Google } from "./googleapi";
 import { processMailBatch } from "./mail";
 
@@ -77,6 +77,19 @@ const ConfigLive = Effect.gen(function* () {
 	return Layer.setConfigProvider(provider);
 }).pipe(Layer.unwrapEffect, Layer.provide([PathLive, FileSystemLive]));
 
+const JsonDbLive = Effect.gen(function* () {
+	const config = yield* AppConfig;
+	const fallback = new Storage({ lastCheckedDate: config.mail.startDate });
+
+	const path = yield* Path.Path;
+	const storagePath = path.resolve(import.meta.dir, ".storage.json");
+
+	return JsonDb.Default(storagePath, fallback);
+}).pipe(
+	Layer.unwrapEffect,
+	Layer.provide([PathLive, FileSystemLive, AppConfigLive]),
+);
+
 const MainLive = Layer.mergeAll(
 	GmailLive,
 	FileSystemLive,
@@ -86,6 +99,7 @@ const MainLive = Layer.mergeAll(
 	OauthLive,
 	SecretsLive,
 	CommandExecutorLive,
+	JsonDbLive,
 ).pipe(Layer.provideMerge(ConfigLive));
 
 cli(process.argv).pipe(Effect.provide(MainLive), BunRuntime.runMain);

@@ -1,56 +1,10 @@
+import * as FileSystem from "@effect/platform/FileSystem";
 import * as Config from "effect/Config";
-import * as ConfigError from "effect/ConfigError";
-import * as Cron from "effect/Cron";
 import * as Effect from "effect/Effect";
+import * as Either from "effect/Either";
 import * as Schema from "effect/Schema";
 import { dateTimeConfig } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
-
-interface AccountConfig {
-	/** Account name */
-	name: string;
-	/** Schedule for email parsing */
-	schedule: Cron.Cron;
-}
-
-export const AccountSecretConfig = Schema.Struct({
-	/** Account email */
-	email: Schema.String,
-	/** Label used to mark emails as parsed */
-	label: Schema.String,
-	/** Google API token */
-	token: Schema.String,
-}).pipe((s) => Schema.parseJson(s));
-
-export type AccountSecretConfig = typeof AccountSecretConfig.Type;
-
-export const GetAccountConfigs = Effect.succeed<ReadonlyArray<AccountConfig>>([
-	{
-		name: "HugeLetters",
-		schedule: Cron.make({
-			minutes: [0],
-			hours: [9],
-			days: [],
-			weekdays: [],
-			months: [],
-		}),
-	},
-]);
-
-export const GetSpreadsheetId = Effect.gen(function* () {
-	const secrets = yield* Secrets;
-	const id = yield* secrets.get("spreadsheet-id");
-	if (id === null) {
-		return yield* Effect.fail(
-			ConfigError.MissingData(
-				["spreadsheet-id"],
-				"Missing Google Docs Spreadsheet ID",
-			),
-		);
-	}
-
-	return id;
-});
 
 const OauthConfig = Effect.gen(function* () {
 	const clientId = Config.string("client_id");
@@ -102,3 +56,54 @@ export class AppConfig extends Effect.Service<AppConfig>()(
 ) {
 	static live = AppConfig.Default;
 }
+
+export class Storage extends Schema.Class<Storage>("StorageSchema")({
+	lastCheckedDate: Schema.DateTimeUtc,
+}) {}
+const StorageFromJson = Schema.parseJson(Storage);
+
+export class JsonDb extends Effect.Service<JsonDb>()(
+	"smaug/scripts/mail-sync/config/JsonDb",
+	{
+		effect: Effect.fn(function* (storagePath: string, fallback: Storage) {
+			const fs = yield* FileSystem.FileSystem;
+
+			const set = Effect.fn("jsondb.set")(function* (storage: Storage) {
+				const encoded = yield* Schema.encode(StorageFromJson)(storage);
+				yield* fs.writeFileString(storagePath, encoded);
+			});
+
+			const Read = Effect.gen(function* () {
+				const current = yield* fs
+					.readFileString(storagePath)
+					.pipe(Effect.flatMap(Schema.decode(StorageFromJson)), Effect.either);
+
+				if (Either.isRight(current)) {
+					return current.right;
+				}
+
+				switch (current.left._tag) {
+					case "SystemError":
+					case "ParseError": {
+						yield* set(fallback);
+						return fallback;
+					}
+				}
+
+				return yield* current.left;
+			});
+
+			return {
+				get: Read,
+				set,
+				update: Effect.fn("jsondb.update")(function* (
+					run: (data: Storage) => Storage,
+				) {
+					const current = yield* Read;
+					const updated = run(current);
+					yield* set(updated);
+				}),
+			};
+		}),
+	},
+) {}
