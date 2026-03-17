@@ -2,8 +2,12 @@ import { pipe } from "effect";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
-import { type Account, parseTransactionFromEmail } from "./account";
-import { AppConfig } from "./config";
+import {
+	type Account,
+	parseTransactionFromEmail,
+	type Transaction,
+} from "./account";
+import { AppConfig, JsonDb } from "./config";
 import { Google } from "./googleapi";
 import type { Gmail } from "./googleapi/index.export";
 
@@ -13,10 +17,22 @@ class LabelConfig extends Effect.Service<LabelConfig>()(
 		effect: Effect.gen(function* () {
 			const config = yield* AppConfig;
 
-			const label = yield* ensureLabel({
-				name: config.mail.labelName,
-				bg: "#16a765",
-				text: "#ffffff",
+			const label = yield* Effect.all({
+				processed: ensureLabel({
+					name: config.mail.processedlabelName,
+					bg: "#16a765",
+					text: "#ffffff",
+				}),
+				failed: ensureLabel({
+					name: config.mail.failedlabelName,
+					bg: "#0b804b",
+					text: "#ffffff",
+				}),
+				skipped: ensureLabel({
+					name: config.mail.skippedlabelName,
+					bg: "#149e60",
+					text: "#ffffff",
+				}),
 			});
 
 			return {
@@ -27,9 +43,9 @@ class LabelConfig extends Effect.Service<LabelConfig>()(
 ) {}
 
 export const processMailBatch = Effect.fn("processMailBatch")(
-	function* (accounts: ReadonlyArray<Account>) {
+	function* (accounts: ReadonlyArray<Account>, size: number) {
 		const query = resolveAccountsQuery(accounts);
-		const emails = yield* getUnprocessedEmails(query);
+		const emails = yield* getUnprocessedEmails(query, size);
 
 		yield* Effect.forEach(emails, (email) => processMail(accounts, email), {
 			concurrency: "unbounded",
@@ -59,14 +75,38 @@ const processMail = Effect.fn("processMail")(function* (
 	accounts: ReadonlyArray<Account>,
 	email: Google.Gmail.Email,
 ) {
-	const transaction = yield* parseTransactionFromEmail(accounts, email);
-
-	// placeholder for saving transaction data
-	yield* Effect.log(transaction);
-
 	const config = yield* LabelConfig;
-	yield* applyLabel(email.id, config.label);
+	yield* parseTransactionFromEmail(accounts, email).pipe(
+		// TODO gmail-sync | retries? | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:23 GMT
+		Effect.tap((transaction) => saveTransactionMock(transaction)),
+		Effect.tap(() => applyLabel(email.id, config.label.processed)),
+		Effect.catchAll((err) => {
+			switch (err._tag) {
+				case "ParserSkip":
+					return applyLabel(email.id, config.label.skipped);
+				// TODO gmail-sync | log error | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:02 GMT
+				case "ParserFailureList":
+				case "SaveError":
+					return applyLabel(email.id, config.label.failed);
+			}
+
+			return err;
+		}),
+	);
 });
+
+// placeholder for saving transaction data
+const saveTransactionMock = Effect.fn(
+	function* (transaction: Transaction) {
+		const db = yield* JsonDb;
+		yield* Effect.log(transaction);
+		yield* db.update((s) => {
+			const updated = s.transactions.concat(transaction);
+			return { ...s, transactions: updated };
+		});
+	},
+	Effect.mapError((e) => ({ _tag: "SaveError" as const, e })),
+);
 
 interface Label {
 	readonly name: string;
@@ -141,23 +181,31 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 
 const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
 	query: Google.Gmail.Query.Query | null,
+	limit: number,
 ) {
 	const config = yield* AppConfig;
 
 	const finalQuery = Google.Gmail.Query.build((q) => {
-		const AfterStart = q.after(config.mail.startDate);
-		const NotProcessed = q.not(q.label(config.mail.labelName));
+		const Completed = q.label(config.mail.processedlabelName);
+		const FailedToProcess = q.label(config.mail.failedlabelName);
+		const Skipped = q.label(config.mail.skippedlabelName);
 
-		const baseQuery = pipe(AfterStart, (_) => q.and(_, NotProcessed));
+		const Processed = pipe(
+			Completed,
+			(_) => q.or(_, FailedToProcess),
+			(_) => q.or(_, Skipped),
+		);
+
+		const BaseQuery = q.not(Processed);
 
 		if (query === null) {
-			return baseQuery;
+			return BaseQuery;
 		}
 
-		return q.and(baseQuery, query);
+		return q.and(BaseQuery, query);
 	});
 
-	return yield* Google.Gmail.searchEmails(finalQuery, 10);
+	return yield* Google.Gmail.searchEmails(finalQuery, limit);
 });
 
 const applyLabel = Effect.fn("applyLabel")(function* (

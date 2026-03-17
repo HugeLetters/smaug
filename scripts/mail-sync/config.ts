@@ -1,4 +1,5 @@
 import * as FileSystem from "@effect/platform/FileSystem";
+import { flow } from "effect";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Either from "effect/Either";
@@ -28,15 +29,28 @@ const MailConfig = Effect.gen(function* () {
 			"Will only process emails after this date (inclusive)",
 		),
 	);
-	const labelName = Config.string("label_name").pipe(
+
+	const processedlabelName = Config.string("label_name").pipe(
 		Config.withDescription(
 			"Gmail label to use to mark emails which parser processed",
+		),
+	);
+	const failedlabelName = Config.string("failed_label_name").pipe(
+		Config.withDescription(
+			"Gmail label to use to mark emails which parser failed to process",
+		),
+	);
+	const skippedlabelName = Config.string("skipped_label_name").pipe(
+		Config.withDescription(
+			"Gmail label to use to mark emails which parser skipped",
 		),
 	);
 
 	return yield* Config.all({
 		startDate,
-		labelName,
+		processedlabelName,
+		failedlabelName,
+		skippedlabelName,
 	}).pipe(Config.nested("mail"));
 });
 
@@ -58,7 +72,7 @@ export class AppConfig extends Effect.Service<AppConfig>()(
 }
 
 export class Storage extends Schema.Class<Storage>("StorageSchema")({
-	lastCheckedDate: Schema.DateTimeUtc,
+	transactions: Schema.Array(Schema.Unknown),
 }) {}
 const StorageFromJson = Schema.parseJson(Storage);
 
@@ -68,9 +82,13 @@ export class JsonDb extends Effect.Service<JsonDb>()(
 		effect: Effect.fn(function* (storagePath: string, fallback: Storage) {
 			const fs = yield* FileSystem.FileSystem;
 
+			const mutex = yield* Effect.makeSemaphore(1);
+			const withMutex = mutex.withPermits(1);
+
 			const set = Effect.fn("jsondb.set")(function* (storage: Storage) {
 				const encoded = yield* Schema.encode(StorageFromJson)(storage);
 				yield* fs.writeFileString(storagePath, encoded);
+				return storage;
 			});
 
 			const Read = Effect.gen(function* () {
@@ -85,8 +103,7 @@ export class JsonDb extends Effect.Service<JsonDb>()(
 				switch (current.left._tag) {
 					case "SystemError":
 					case "ParseError": {
-						yield* set(fallback);
-						return fallback;
+						return yield* set(fallback);
 					}
 				}
 
@@ -94,15 +111,15 @@ export class JsonDb extends Effect.Service<JsonDb>()(
 			});
 
 			return {
-				get: Read,
-				set,
+				get: withMutex(Read),
+				set: flow(set, withMutex),
 				update: Effect.fn("jsondb.update")(function* (
 					run: (data: Storage) => Storage,
 				) {
 					const current = yield* Read;
 					const updated = run(current);
-					yield* set(updated);
-				}),
+					return yield* set(updated);
+				}, withMutex),
 			};
 		}),
 	},

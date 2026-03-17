@@ -1,11 +1,11 @@
 import * as Command from "@effect/cli/Command";
 import * as Options from "@effect/cli/Options";
+import * as Path from "@effect/platform/Path";
 import { BunRuntime } from "@effect/platform-bun";
 import * as BunCommandExecutor from "@effect/platform-bun/BunCommandExecutor";
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
-import * as Path from "@effect/platform/Path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -17,20 +17,26 @@ import { AppConfig, JsonDb, Storage } from "./config";
 import { Google } from "./googleapi";
 import { processMailBatch } from "./mail";
 
-const Sync = Effect.gen(function* () {
+const sync = Effect.fn(function* (batchSize: number) {
 	yield* SetupAuth;
-	yield* processMailBatch(Accounts);
+	yield* processMailBatch(Accounts, batchSize);
 });
 
 const GmailSyncCommand = Command.make(
 	"gmail-sync",
 	{
 		runOnce: Options.boolean("run-once").pipe(
+			Options.withAlias("o"),
+			Options.withDescription("Run the sync once and exit"),
+		),
+		batchSize: Options.integer("batch-size").pipe(
+			Options.withAlias("s"),
+			Options.withDefault(10),
 			Options.withDescription("Run the sync once and exit"),
 		),
 	},
-	Effect.fn(function* ({ runOnce }) {
-		let task = Sync;
+	Effect.fn(function* ({ runOnce, batchSize }) {
+		let task = sync(batchSize);
 
 		if (!runOnce) {
 			task = task.pipe(Effect.schedule(Schedule.cron("0 9 * * *")));
@@ -78,17 +84,13 @@ const ConfigLive = Effect.gen(function* () {
 }).pipe(Layer.unwrapEffect, Layer.provide([PathLive, FileSystemLive]));
 
 const JsonDbLive = Effect.gen(function* () {
-	const config = yield* AppConfig;
-	const fallback = new Storage({ lastCheckedDate: config.mail.startDate });
+	const fallback = new Storage({ transactions: [] });
 
 	const path = yield* Path.Path;
 	const storagePath = path.resolve(import.meta.dir, ".storage.json");
 
 	return JsonDb.Default(storagePath, fallback);
-}).pipe(
-	Layer.unwrapEffect,
-	Layer.provide([PathLive, FileSystemLive, AppConfigLive]),
-);
+}).pipe(Layer.unwrapEffect, Layer.provide([PathLive, FileSystemLive]));
 
 const MainLive = Layer.mergeAll(
 	GmailLive,
