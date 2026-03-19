@@ -48,9 +48,12 @@ export const processMailBatch = Effect.fn("processMailBatch")(
 		const query = resolveAccountsQuery(accounts);
 		const emails = yield* getUnprocessedEmails(query, size);
 
-		yield* Effect.forEach(emails, (email) => processMail(accounts, email), {
-			concurrency: "unbounded",
-		});
+		yield* Effect.forEach(
+			emails,
+			(email) =>
+				processMail(accounts, email).pipe(Effect.catchAll(Effect.logError)),
+			{ concurrency: "unbounded" },
+		);
 	},
 	// before each batch ensure labels exist
 	Effect.provide(LabelConfig.Default),
@@ -80,18 +83,22 @@ const processMail = Effect.fn("processMail")(function* (
 	yield* parseTransactionFromEmail(accounts, email).pipe(
 		// TODO gmail-sync | retries? | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:23 GMT
 		Effect.tap((transaction) => saveTransaction(transaction)),
-		Effect.tap(() => applyLabel(email.id, config.label.processed)),
-		Effect.catchAll((err) => {
-			switch (err._tag) {
-				case "ParserSkip":
-					return applyLabel(email.id, config.label.skipped);
-				// TODO gmail-sync | log error | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:02 GMT
-				case "ParserFailureList":
-				case "SheetsWriteError":
-					return applyLabel(email.id, config.label.failed);
-			}
+		Effect.matchEffect({
+			onSuccess() {
+				return applyLabel(email.id, config.label.processed);
+			},
+			onFailure(error) {
+				switch (error._tag) {
+					case "ParserSkip":
+						return applyLabel(email.id, config.label.skipped);
+					// TODO gmail-sync | log error | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:02 GMT
+					case "ParserFailureList":
+					case "SheetsWriteError":
+						return applyLabel(email.id, config.label.failed);
+				}
 
-			return err;
+				return error satisfies never;
+			},
 		}),
 	);
 });

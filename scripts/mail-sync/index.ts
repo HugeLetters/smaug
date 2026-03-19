@@ -6,6 +6,7 @@ import * as BunCommandExecutor from "@effect/platform-bun/BunCommandExecutor";
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import * as BunPath from "@effect/platform-bun/BunPath";
 import * as BunTerminal from "@effect/platform-bun/BunTerminal";
+import * as Cron from "effect/Cron";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -40,7 +41,19 @@ const GmailSyncCommand = Command.make(
 		let task = sync(batchSize);
 
 		if (!runOnce) {
-			task = task.pipe(Effect.schedule(Schedule.cron("0 9 * * *")));
+			const schedule = Cron.make({
+				minutes: [0],
+				hours: [9],
+				days: [],
+				months: [],
+				weekdays: [],
+			});
+
+			task = task.pipe(
+				Effect.catchAll(Effect.logFatal),
+				Effect.schedule(Schedule.cron(schedule)),
+				Effect.ensureErrorType<never>(),
+			);
 		}
 
 		yield* task;

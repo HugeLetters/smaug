@@ -222,13 +222,22 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 					return;
 				}
 
-				const fullMessage = yield* gmail.use((client) =>
-					client.users.messages.get({
-						userId: ME,
-						id,
-						format: "full",
-					}),
-				);
+				const fullMessage = yield* gmail
+					.use((client) =>
+						client.users.messages.get({
+							userId: ME,
+							id,
+							format: "full",
+						}),
+					)
+					.pipe(
+						Effect.tapError(Effect.logError),
+						Effect.catchAll(() => Effect.succeed(null)),
+					);
+
+				if (!fullMessage) {
+					return;
+				}
 
 				const payload = fullMessage.data.payload ?? null;
 				const content = extractEmailContentMaybe(payload);
@@ -247,6 +256,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 
 				return email;
 			}),
+			{ concurrency: "unbounded" },
 		),
 		Effect.map(Arr.filter((v) => v !== undefined)),
 	);
