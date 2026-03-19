@@ -26,8 +26,8 @@ export class GmailClient extends Effect.Service<GmailClient>()(
 			);
 
 			const limiter = yield* RateLimiter.make({
-				limit: 500,
-				interval: "1 minute",
+				limit: 100,
+				interval: "10  seconds",
 				algorithm: "token-bucket",
 			});
 

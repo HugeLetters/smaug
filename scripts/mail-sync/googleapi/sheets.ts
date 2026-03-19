@@ -20,20 +20,21 @@ export class SheetsClient extends Effect.Service<SheetsClient>()(
 				google.sheets({ version: "v4", auth }),
 			);
 
+			const rateLimitInterval = Duration.seconds(10);
 			const limiter = yield* RateLimiter.make({
-				limit: 120,
-				interval: "1 minute",
+				limit: 20,
+				interval: rateLimitInterval,
 				algorithm: "token-bucket",
 			});
 
 			const readLimiter = yield* RateLimiter.make({
-				limit: 60,
-				interval: "1 minute",
+				limit: 10,
+				interval: rateLimitInterval,
 				algorithm: "fixed-window",
 			});
 			const writeLimiter = yield* RateLimiter.make({
-				limit: 60,
-				interval: "1 minute",
+				limit: 10,
+				interval: rateLimitInterval,
 				algorithm: "fixed-window",
 			});
 
