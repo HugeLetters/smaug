@@ -52,4 +52,5 @@ export class OauthClient extends Effect.Service<OauthClient>()(
 export enum Scope {
 	GmailModify = "https://www.googleapis.com/auth/gmail.modify",
 	GmailRead = "https://www.googleapis.com/auth/gmail.readonly",
+	SheetsWrite = "https://www.googleapis.com/auth/spreadsheets",
 }

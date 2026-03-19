@@ -16,6 +16,7 @@ import { Google } from "./googleapi";
 const RequiredScopes = [
 	Google.Oauth.Scope.GmailModify,
 	Google.Oauth.Scope.GmailRead,
+	Google.Oauth.Scope.SheetsWrite,
 ];
 
 export const SetupAuth = Effect.gen(function* () {
