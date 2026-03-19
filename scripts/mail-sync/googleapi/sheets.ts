@@ -42,7 +42,7 @@ export class SheetsClient extends Effect.Service<SheetsClient>()(
 
 export type CellValue = string | number | boolean | null;
 
-enum ValueInputOptions {
+export enum ValueInputOptions {
 	raw = "RAW",
 	userEntered = "USER_ENTERED",
 }
@@ -85,16 +85,19 @@ enum Dimension {
 	columns = "COLUMNS",
 }
 
-enum InsertDataOption {
+export enum InsertDataOption {
 	overwrite = "OVERWRITE",
 	insert = "INSERT_ROWS",
 }
 
-export interface AppendRowOptions {
+interface BaseRowWriteOptions {
 	readonly spreadsheetId: string;
 	readonly sheetName: string;
 	readonly startColumn?: string;
 	readonly valueInputOption?: ValueInputOptions;
+}
+interface AppendRowOptions extends BaseRowWriteOptions {
+	insertDataOption?: InsertDataOption;
 }
 
 // TODO gmail-sync | batching? | by Evgenii Perminov at Wed, 18 Mar 2026 01:02:00 GMT
@@ -105,6 +108,7 @@ export const appendRow = Effect.fn("sheets.writeRowToFirstEmpty")(function* (
 	const {
 		valueInputOption = ValueInputOptions.userEntered,
 		startColumn = "A",
+		insertDataOption = InsertDataOption.insert,
 	} = options;
 
 	const sheets = yield* SheetsClient;
@@ -129,7 +133,7 @@ export const appendRow = Effect.fn("sheets.writeRowToFirstEmpty")(function* (
 					values: [Array.from(values)],
 				},
 				valueInputOption,
-				insertDataOption: InsertDataOption.insert,
+				insertDataOption,
 			});
 		})
 		.pipe(
@@ -147,7 +151,7 @@ export const appendRow = Effect.fn("sheets.writeRowToFirstEmpty")(function* (
 		);
 });
 
-export interface WriteRowOptions extends AppendRowOptions {
+export interface WriteRowOptions extends BaseRowWriteOptions {
 	readonly row: number;
 }
 
