@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
 import * as Predicate from "effect/Predicate";
+import * as RateLimiter from "effect/RateLimiter";
 import * as Schedule from "effect/Schedule";
 import type { sheets_v4 } from "googleapis";
 import { google } from "googleapis";
@@ -13,11 +14,28 @@ import { OauthClient } from "./oauth";
 export class SheetsClient extends Effect.Service<SheetsClient>()(
 	"smaug/googleapi/sheets/SheetsClient",
 	{
-		effect: Effect.gen(function* () {
+		scoped: Effect.gen(function* () {
 			const oauth = yield* OauthClient;
 			const client = yield* oauth.use((auth) =>
 				google.sheets({ version: "v4", auth }),
 			);
+
+			const limiter = yield* RateLimiter.make({
+				limit: 120,
+				interval: "1 minute",
+				algorithm: "token-bucket",
+			});
+
+			const readLimiter = yield* RateLimiter.make({
+				limit: 60,
+				interval: "1 minute",
+				algorithm: "fixed-window",
+			});
+			const writeLimiter = yield* RateLimiter.make({
+				limit: 60,
+				interval: "1 minute",
+				algorithm: "fixed-window",
+			});
 
 			const use = Effect.fn("sheets.use")(
 				<T>(run: (client: sheets_v4.Sheets) => T | Promise<T>) =>
@@ -29,10 +47,13 @@ export class SheetsClient extends Effect.Service<SheetsClient>()(
 							return new SheetsError({ cause: error });
 						},
 					}),
+				limiter,
 			);
 
 			return {
 				use,
+				useRead: Effect.fn("sheets.useRead")(use, readLimiter),
+				useWrite: Effect.fn("sheets.useWrite")(use, writeLimiter),
 			};
 		}),
 	},
@@ -67,7 +88,7 @@ export const readRow = Effect.fn("sheets.readRow")(function* (options: {
 	});
 
 	const response = yield* sheets
-		.use((client) =>
+		.useRead((client) =>
 			client.spreadsheets.values.get({
 				spreadsheetId: options.spreadsheetId,
 				range,
@@ -125,7 +146,7 @@ export const appendRow = Effect.fn("sheets.writeRowToFirstEmpty")(function* (
 	});
 
 	yield* sheets
-		.use((client) => {
+		.useWrite((client) => {
 			return client.spreadsheets.values.append({
 				spreadsheetId: options.spreadsheetId,
 				range,
@@ -178,7 +199,7 @@ export const writeRow = Effect.fn("sheets.writeRow")(function* (
 	}
 
 	yield* sheets
-		.use((client) => {
+		.useWrite((client) => {
 			return client.spreadsheets.values.batchUpdate({
 				spreadsheetId: options.spreadsheetId,
 				requestBody: {
