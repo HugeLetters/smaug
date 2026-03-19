@@ -114,20 +114,32 @@ const processMail = Effect.fn("processMail")(function* (
 			),
 		),
 		Effect.matchEffect({
-			onSuccess() {
-				return applyLabel(email.id, config.label.processed);
+			onSuccess(transaction) {
+				return applyLabel(email.id, config.label.processed).pipe(
+					Effect.zipLeft(
+						Effect.log(
+							`Processed email ${email.id} for ${transaction.amount} by ${transaction.by.accountId}`,
+						),
+					),
+				);
 			},
 			onFailure(error) {
 				switch (error._tag) {
 					case "ParserSkip":
 						return applyLabel(email.id, config.label.skipped);
-					// TODO gmail-sync | log error | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:02 GMT
 					case "ParserFailureList":
 					case "SheetsWriteError":
 						return applyLabel(email.id, config.label.failed);
 				}
 			},
 		}),
+		Effect.tapErrorTag("GmailError", (err) =>
+			Effect.logFatal(
+				`Failed to apply Gmail label for ${email.id}`,
+				`Snippet: ${formatSnippet(email.snippet)}`,
+				err,
+			),
+		),
 	);
 });
 
