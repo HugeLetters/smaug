@@ -1,8 +1,10 @@
 import { pipe } from "effect";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
+import * as Schedule from "effect/Schedule";
 import {
 	type Account,
 	parseTransactionFromEmail,
@@ -50,8 +52,17 @@ export const processMailBatch = Effect.fn("processMailBatch")(
 
 		yield* Effect.forEach(
 			emails,
-			(email) =>
-				processMail(accounts, email).pipe(Effect.catchAll(Effect.logError)),
+			(email) => {
+				return processMail(accounts, email).pipe(
+					Effect.catchAll((err) =>
+						Effect.logError(
+							`Failed to process email: ${email.id}`,
+							`Snippet: ${formatSnippet(email.snippet)}`,
+							err,
+						),
+					),
+				);
+			},
 			{ concurrency: "unbounded" },
 		);
 	},
@@ -81,8 +92,27 @@ const processMail = Effect.fn("processMail")(function* (
 ) {
 	const config = yield* LabelConfig;
 	yield* parseTransactionFromEmail(accounts, email).pipe(
-		// TODO gmail-sync | retries? | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:23 GMT
 		Effect.tap((transaction) => saveTransaction(transaction)),
+		Effect.tapErrorTag("ParserSkip", () =>
+			Effect.logWarning(
+				`Skipped email ${email.id}`,
+				`Snippet: ${formatSnippet(email.snippet)}`,
+			),
+		),
+		Effect.tapErrorTag("ParserFailureList", (err) =>
+			Effect.logError(
+				`Failed to parse email ${email.id}`,
+				`Snippet: ${formatSnippet(email.snippet)}`,
+				err.failures.map((failure) => failure.error),
+			),
+		),
+		Effect.tapErrorTag("SheetsWriteError", (err) =>
+			Effect.logError(
+				`Failed to save email ${email.id}`,
+				`Snippet: ${formatSnippet(email.snippet)}`,
+				err,
+			),
+		),
 		Effect.matchEffect({
 			onSuccess() {
 				return applyLabel(email.id, config.label.processed);
@@ -96,8 +126,6 @@ const processMail = Effect.fn("processMail")(function* (
 					case "SheetsWriteError":
 						return applyLabel(email.id, config.label.failed);
 				}
-
-				return error satisfies never;
 			},
 		}),
 	);
@@ -147,6 +175,7 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 	const foundLabel = yield* gmail
 		.use((client) => client.users.labels.list({ userId: Google.Gmail.ME }))
 		.pipe(
+			Effect.retry(RetrySchedule),
 			Effect.map((res) => res.data.labels ?? []),
 			Effect.map((res) => res.find((result) => result.name === label.name)),
 		);
@@ -164,37 +193,41 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 
 		if (hasConfigMismatch) {
 			yield* Effect.log(`Syncing label ${label.name} config`);
-			yield* gmail.use((client) =>
-				client.users.labels.patch({
-					userId: Google.Gmail.ME,
-					id: foundId,
-					requestBody: {
-						color: {
-							backgroundColor: label.bg,
-							textColor: label.text,
+			yield* gmail
+				.use((client) =>
+					client.users.labels.patch({
+						userId: Google.Gmail.ME,
+						id: foundId,
+						requestBody: {
+							color: {
+								backgroundColor: label.bg,
+								textColor: label.text,
+							},
 						},
-					},
-				}),
-			);
+					}),
+				)
+				.pipe(Effect.retry(RetrySchedule));
 		}
 
 		return foundId;
 	}
 
-	const createdLabel = yield* gmail.use((client) =>
-		client.users.labels.create({
-			userId: Google.Gmail.ME,
-			requestBody: {
-				name: label.name,
-				labelListVisibility: "labelShow",
-				messageListVisibility: "show",
-				color: {
-					backgroundColor: label.bg,
-					textColor: label.text,
+	const createdLabel = yield* gmail
+		.use((client) =>
+			client.users.labels.create({
+				userId: Google.Gmail.ME,
+				requestBody: {
+					name: label.name,
+					labelListVisibility: "labelShow",
+					messageListVisibility: "show",
+					color: {
+						backgroundColor: label.bg,
+						textColor: label.text,
+					},
 				},
-			},
-		}),
-	);
+			}),
+		)
+		.pipe(Effect.retry(RetrySchedule));
 
 	const createdId = createdLabel.data.id;
 	if (!createdId) {
@@ -232,7 +265,9 @@ const getUnprocessedEmails = Effect.fn("fetchUnprocessedEmails")(function* (
 		return q.and(BaseQuery, query);
 	});
 
-	return yield* Google.Gmail.searchEmails(finalQuery, limit);
+	return yield* Google.Gmail.searchEmails(finalQuery, limit).pipe(
+		Effect.retry(RetrySchedule),
+	);
 });
 
 const applyLabel = Effect.fn("applyLabel")(function* (
@@ -241,15 +276,17 @@ const applyLabel = Effect.fn("applyLabel")(function* (
 ) {
 	const gmail = yield* Google.Gmail.GmailClient;
 
-	yield* gmail.use((client) =>
-		client.users.messages.modify({
-			userId: Google.Gmail.ME,
-			id: emailId,
-			requestBody: {
-				addLabelIds: [labelId],
-			},
-		}),
-	);
+	yield* gmail
+		.use((client) =>
+			client.users.messages.modify({
+				userId: Google.Gmail.ME,
+				id: emailId,
+				requestBody: {
+					addLabelIds: [labelId],
+				},
+			}),
+		)
+		.pipe(Effect.retry(RetrySchedule));
 });
 
 export class MailError extends Data.TaggedError("MailError")<{
@@ -259,6 +296,20 @@ export class MailError extends Data.TaggedError("MailError")<{
 	static fail(message: string, cause?: unknown) {
 		return new MailError({ message, cause });
 	}
+}
+
+const RetrySchedule = pipe(
+	Schedule.exponential(Duration.seconds(1)),
+	Schedule.intersect(Schedule.recurs(5)),
+);
+
+function formatSnippet(snippet: string) {
+	const trimmed = snippet.replace(/\s+/g, " ").trim();
+	if (trimmed.length <= 160) {
+		return trimmed;
+	}
+
+	return `${trimmed.slice(0, 157)}...`;
 }
 
 type ValidLabelColor =
