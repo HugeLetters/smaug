@@ -6,6 +6,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
+import * as RateLimiter from "effect/RateLimiter";
 import * as Schedule from "effect/Schedule";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
@@ -18,11 +19,17 @@ export class GmailError extends Data.TaggedError("GmailError")<{
 export class GmailClient extends Effect.Service<GmailClient>()(
 	"smaug/googleapi/gmail/GmailClient",
 	{
-		effect: Effect.gen(function* () {
+		scoped: Effect.gen(function* () {
 			const oauth = yield* OauthClient;
 			const client = yield* oauth.use((auth) =>
 				google.gmail({ version: "v1", auth }),
 			);
+
+			const limiter = yield* RateLimiter.make({
+				limit: 500,
+				interval: "1 minute",
+				algorithm: "token-bucket",
+			});
 
 			const use = Effect.fn("gmail.use")(
 				<T>(run: (client: gmail_v1.Gmail) => T | Promise<T>) =>
@@ -34,6 +41,7 @@ export class GmailClient extends Effect.Service<GmailClient>()(
 							return new GmailError({ cause: error });
 						},
 					}),
+				limiter,
 			);
 
 			return {
