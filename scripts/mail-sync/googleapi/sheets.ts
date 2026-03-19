@@ -162,7 +162,7 @@ export const appendRow = Effect.fn("sheets.appendRow")(function* (
 			Effect.catchTag("SheetsError", (err) =>
 				SheetsWriteError.fail(
 					`Failed to append row '${values.join(", ")}' at '${range}'`,
-					err.cause,
+					err,
 				),
 			),
 		);
@@ -207,10 +207,7 @@ export const writeRow = Effect.fn("sheets.writeRow")(function* (
 		.pipe(
 			Effect.retry(RetrySchedule),
 			Effect.catchTag("SheetsError", (err) =>
-				SheetsWriteError.fail(
-					`Failed to write to row ${options.row}`,
-					err.cause,
-				),
+				SheetsWriteError.fail(`Failed to write to row ${options.row}`, err),
 			),
 		);
 });
