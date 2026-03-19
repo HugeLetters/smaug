@@ -22,6 +22,7 @@ const sync = Effect.fn(function* (batchSize: number) {
 	yield* SetupAuth;
 
 	yield* processMailBatch(Accounts, batchSize);
+	yield* Effect.log("Batch processing finished");
 });
 
 const GmailSyncCommand = Command.make(
