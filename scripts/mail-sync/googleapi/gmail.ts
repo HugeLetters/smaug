@@ -2,9 +2,11 @@ import { pipe } from "effect";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
@@ -231,6 +233,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 						}),
 					)
 					.pipe(
+						Effect.retry(RetrySchedule),
 						Effect.tapError(Effect.logError),
 						Effect.catchAll(() => Effect.succeed(null)),
 					);
@@ -425,3 +428,8 @@ function decodeBase64(base64: string) {
 }
 
 export const ME = "me";
+
+const RetrySchedule = Duration.seconds(1).pipe(
+	Schedule.exponential,
+	Schedule.intersect(Schedule.recurs(5)),
+);
