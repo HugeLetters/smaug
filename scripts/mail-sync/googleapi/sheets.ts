@@ -122,7 +122,7 @@ interface AppendRowOptions extends BaseRowWriteOptions {
 }
 
 // TODO gmail-sync | batching? | by Evgenii Perminov at Wed, 18 Mar 2026 01:02:00 GMT
-export const appendRow = Effect.fn("sheets.writeRowToFirstEmpty")(function* (
+export const appendRow = Effect.fn("sheets.appendRow")(function* (
 	values: ReadonlyArray<CellValue>,
 	options: AppendRowOptions,
 ) {
