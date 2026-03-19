@@ -1,9 +1,11 @@
 import { pipe } from "effect";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
 import * as Predicate from "effect/Predicate";
+import * as Schedule from "effect/Schedule";
 import type { sheets_v4 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
@@ -64,13 +66,15 @@ export const readRow = Effect.fn("sheets.readRow")(function* (options: {
 		endRow: options.row,
 	});
 
-	const response = yield* sheets.use((client) =>
-		client.spreadsheets.values.get({
-			spreadsheetId: options.spreadsheetId,
-			range,
-			majorDimension: Dimension.rows,
-		}),
-	);
+	const response = yield* sheets
+		.use((client) =>
+			client.spreadsheets.values.get({
+				spreadsheetId: options.spreadsheetId,
+				range,
+				majorDimension: Dimension.rows,
+			}),
+		)
+		.pipe(Effect.retry(RetrySchedule));
 
 	const out: Array<CellValue> = response.data.values?.[0] ?? [];
 	return out;
@@ -129,12 +133,17 @@ export const appendRow = Effect.fn("sheets.writeRowToFirstEmpty")(function* (
 			});
 		})
 		.pipe(
-			Effect.catchTag("SheetsError", (err) => {
-				return SheetsWriteError.fail(
-					`Failed to append row '${values.join(", ")}' at '${range}'`,
-					err.cause,
-				);
-			}),
+			Effect.retry(RetrySchedule),
+			Effect.catchTag("SheetsError", (err) =>
+				Effect.logError("Sheets append failed", err).pipe(
+					Effect.zipRight(
+						SheetsWriteError.fail(
+							`Failed to append row '${values.join(", ")}' at '${range}'`,
+							err.cause,
+						),
+					),
+				),
+			),
 		);
 });
 
@@ -175,12 +184,17 @@ export const writeRow = Effect.fn("sheets.writeRow")(function* (
 			});
 		})
 		.pipe(
-			Effect.catchTag("SheetsError", (err) => {
-				return SheetsWriteError.fail(
-					`Failed to write to row ${options.row}`,
-					err.cause,
-				);
-			}),
+			Effect.retry(RetrySchedule),
+			Effect.catchTag("SheetsError", (err) =>
+				Effect.logError("Sheets write failed", err).pipe(
+					Effect.zipRight(
+						SheetsWriteError.fail(
+							`Failed to write to row ${options.row}`,
+							err.cause,
+						),
+					),
+				),
+			),
 		);
 });
 
@@ -283,3 +297,8 @@ export class SheetsWriteError extends Data.TaggedError("SheetsWriteError")<{
 		return new SheetsWriteError({ message, cause });
 	}
 }
+
+const RetrySchedule = pipe(
+	Schedule.exponential(Duration.seconds(1)),
+	Schedule.intersect(Schedule.recurs(5)),
+);
