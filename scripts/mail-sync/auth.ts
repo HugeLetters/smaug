@@ -20,9 +20,7 @@ const RequiredScopes = [
 ];
 
 export const SetupAuth = Effect.gen(function* () {
-	const oauth = yield* Google.Oauth.OauthClient;
-
-	const isClientAccessValid = yield* oauth.GetCredentials.pipe(
+	const isClientAccessValid = yield* Google.Oauth.GetCredentials.pipe(
 		Effect.map((c) => c.access_token ?? null),
 		Effect.flatMap((token) => {
 			if (token === null) {
@@ -34,7 +32,7 @@ export const SetupAuth = Effect.gen(function* () {
 	);
 
 	if (isClientAccessValid) {
-		const refreshToken = yield* oauth.GetCredentials.pipe(
+		const refreshToken = yield* Google.Oauth.GetCredentials.pipe(
 			Effect.map((c) => c.refresh_token ?? null),
 		);
 		if (refreshToken !== null) {
@@ -44,7 +42,7 @@ export const SetupAuth = Effect.gen(function* () {
 		return;
 	}
 
-	const clientRefreshToken = yield* oauth.GetCredentials.pipe(
+	const clientRefreshToken = yield* Google.Oauth.GetCredentials.pipe(
 		Effect.map((c) => c.refresh_token ?? null),
 	);
 	if (clientRefreshToken !== null) {
@@ -87,7 +85,7 @@ const areScopesSufficient = (scopes: ReadonlyArray<string>) =>
 
 const GetAccessToken = Effect.gen(function* () {
 	const oauth = yield* Google.Oauth.OauthClient;
-	const token = yield* oauth.GetCredentials.pipe(
+	const token = yield* Google.Oauth.GetCredentials.pipe(
 		Effect.map((c) => c.access_token ?? null),
 	);
 	if (token !== null) {
@@ -102,14 +100,12 @@ const GetAccessToken = Effect.gen(function* () {
 		return null;
 	}
 
-	yield* oauth.updateCredentials({ access_token: refreshed });
+	yield* Google.Oauth.updateCredentials({ access_token: refreshed });
 	return refreshed;
 });
 
 const refreshAccessToken = Effect.fn(function* (refreshToken: string) {
-	const oauth = yield* Google.Oauth.OauthClient;
-
-	yield* oauth.updateCredentials({ refresh_token: refreshToken });
+	yield* Google.Oauth.updateCredentials({ refresh_token: refreshToken });
 
 	const token = yield* GetAccessToken;
 	if (token === null) {

@@ -31,23 +31,27 @@ export class OauthClient extends Effect.Service<OauthClient>()(
 					}),
 			);
 
-			const GetCredentials = Effect.sync(() => client.credentials);
-
 			return {
 				use,
-				GetCredentials,
-				updateCredentials(update: Partial<Auth.Credentials>) {
-					return Effect.gen(function* () {
-						const current = yield* GetCredentials;
-						client.setCredentials({ ...current, ...update });
-					});
-				},
+				raw: client,
 			};
 		}),
 	},
 ) {
 	static live = OauthClient.Default;
 }
+
+export const GetCredentials = OauthClient.use(
+	(client) => client.raw.credentials,
+);
+
+export const updateCredentials = Effect.fn("oauth.update_credentials")(
+	function* (update: Partial<Auth.Credentials>) {
+		const client = yield* OauthClient;
+		const current = yield* GetCredentials;
+		client.raw.setCredentials({ ...current, ...update });
+	},
+);
 
 export enum Scope {
 	GmailModify = "https://www.googleapis.com/auth/gmail.modify",
