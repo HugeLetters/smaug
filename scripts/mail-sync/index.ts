@@ -13,12 +13,13 @@ import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 import { Accounts } from "./account.config";
 import { SetupAuth } from "./auth";
-import { AppConfig, JsonDb, Storage } from "./config";
+import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 import { processMailBatch } from "./mail";
 
 const sync = Effect.fn(function* (batchSize: number) {
 	yield* SetupAuth;
+
 	yield* processMailBatch(Accounts, batchSize);
 });
 
@@ -73,6 +74,10 @@ const GmailLive = Google.Gmail.GmailClient.live.pipe(
 	Layer.provide([AppConfigLive, OauthLive]),
 );
 
+const SheetsLive = Google.Sheets.SheetsClient.live.pipe(
+	Layer.provide([AppConfigLive, OauthLive]),
+);
+
 const ConfigLive = Effect.gen(function* () {
 	const path = yield* Path.Path;
 
@@ -83,17 +88,9 @@ const ConfigLive = Effect.gen(function* () {
 	return Layer.setConfigProvider(provider);
 }).pipe(Layer.unwrapEffect, Layer.provide([PathLive, FileSystemLive]));
 
-const JsonDbLive = Effect.gen(function* () {
-	const fallback = new Storage({ transactions: [] });
-
-	const path = yield* Path.Path;
-	const storagePath = path.resolve(import.meta.dir, ".storage.json");
-
-	return JsonDb.Default(storagePath, fallback);
-}).pipe(Layer.unwrapEffect, Layer.provide([PathLive, FileSystemLive]));
-
 const MainLive = Layer.mergeAll(
 	GmailLive,
+	SheetsLive,
 	FileSystemLive,
 	PathLive,
 	TerminalLive,
@@ -101,7 +98,6 @@ const MainLive = Layer.mergeAll(
 	OauthLive,
 	SecretsLive,
 	CommandExecutorLive,
-	JsonDbLive,
 ).pipe(Layer.provideMerge(ConfigLive));
 
 cli(process.argv).pipe(Effect.provide(MainLive), BunRuntime.runMain);

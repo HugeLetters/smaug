@@ -1,5 +1,6 @@
 import { pipe } from "effect";
 import * as Data from "effect/Data";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
 import {
@@ -7,7 +8,7 @@ import {
 	parseTransactionFromEmail,
 	type Transaction,
 } from "./account";
-import { AppConfig, JsonDb } from "./config";
+import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 import type { Gmail } from "./googleapi/index.export";
 
@@ -78,7 +79,7 @@ const processMail = Effect.fn("processMail")(function* (
 	const config = yield* LabelConfig;
 	yield* parseTransactionFromEmail(accounts, email).pipe(
 		// TODO gmail-sync | retries? | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:23 GMT
-		Effect.tap((transaction) => saveTransactionMock(transaction)),
+		Effect.tap((transaction) => saveTransaction(transaction)),
 		Effect.tap(() => applyLabel(email.id, config.label.processed)),
 		Effect.catchAll((err) => {
 			switch (err._tag) {
@@ -86,7 +87,7 @@ const processMail = Effect.fn("processMail")(function* (
 					return applyLabel(email.id, config.label.skipped);
 				// TODO gmail-sync | log error | by Evgenii Perminov at Tue, 17 Mar 2026 02:36:02 GMT
 				case "ParserFailureList":
-				case "SaveError":
+				case "SheetsWriteError":
 					return applyLabel(email.id, config.label.failed);
 			}
 
@@ -95,18 +96,37 @@ const processMail = Effect.fn("processMail")(function* (
 	);
 });
 
-// placeholder for saving transaction data
-const saveTransactionMock = Effect.fn(
-	function* (transaction: Transaction) {
-		const db = yield* JsonDb;
-		yield* Effect.log(transaction);
-		yield* db.update((s) => {
-			const updated = s.transactions.concat(transaction);
-			return { ...s, transactions: updated };
-		});
-	},
-	Effect.mapError((e) => ({ _tag: "SaveError" as const, e })),
-);
+const saveTransaction = Effect.fn("save-transaction")(function* (
+	transaction: Transaction,
+) {
+	const config = yield* AppConfig;
+
+	const getValue = (column: (typeof config.sheet.columns)[number]) => {
+		switch (column) {
+			case "date":
+				return DateTime.formatIsoDateUtc(transaction.date);
+			case "by":
+				return transaction.by.accountId;
+			case "amount":
+				return transaction.amount;
+			case "category":
+				return transaction.category;
+			case "comment":
+				return transaction.merchant;
+			case "SKIP":
+				return null;
+		}
+
+		return null;
+	};
+
+	const values = config.sheet.columns.map(getValue);
+
+	yield* Google.Sheets.appendRow(values, {
+		spreadsheetId: config.sheet.spreadsheetId,
+		sheetName: config.sheet.sheetName,
+	});
+});
 
 interface Label {
 	readonly name: string;

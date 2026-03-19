@@ -1,9 +1,5 @@
-import * as FileSystem from "@effect/platform/FileSystem";
-import { flow } from "effect";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
-import * as Either from "effect/Either";
-import * as Schema from "effect/Schema";
 import { dateTimeConfig } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 
@@ -21,6 +17,35 @@ const OauthConfig = Effect.gen(function* () {
 		...oauth,
 		clientSecret,
 	};
+});
+
+const SheetConfig = Effect.gen(function* () {
+	const spreadsheetId = Config.string("spreadsheet_id").pipe(
+		Config.withDescription("Target Google Sheet ID"),
+	);
+	const sheetName = Config.string("sheet_name").pipe(
+		Config.withDescription("Worksheet name inside the spreadsheet"),
+	);
+
+	const column = Config.literal(
+		"date",
+		"by",
+		"amount",
+		"category",
+		"comment",
+		"SKIP",
+	)();
+	const columns = Config.array(column, "columns").pipe(
+		Config.withDescription(
+			"Columns of transaction fields. SKIP means a column is skipped",
+		),
+	);
+
+	return yield* Config.all({
+		spreadsheetId,
+		sheetName,
+		columns,
+	}).pipe(Config.nested("sheet"));
 });
 
 const MailConfig = Effect.gen(function* () {
@@ -60,67 +85,15 @@ export class AppConfig extends Effect.Service<AppConfig>()(
 		effect: Effect.gen(function* () {
 			const oauth = yield* OauthConfig;
 			const mail = yield* MailConfig;
+			const sheet = yield* SheetConfig;
 
 			return {
 				mail,
 				oauth,
+				sheet,
 			};
 		}).pipe(Effect.withSpan("AppConfig")),
 	},
 ) {
 	static live = AppConfig.Default;
 }
-
-export class Storage extends Schema.Class<Storage>("StorageSchema")({
-	transactions: Schema.Array(Schema.Unknown),
-}) {}
-const StorageFromJson = Schema.parseJson(Storage);
-
-export class JsonDb extends Effect.Service<JsonDb>()(
-	"smaug/scripts/mail-sync/config/JsonDb",
-	{
-		effect: Effect.fn(function* (storagePath: string, fallback: Storage) {
-			const fs = yield* FileSystem.FileSystem;
-
-			const mutex = yield* Effect.makeSemaphore(1);
-			const withMutex = mutex.withPermits(1);
-
-			const set = Effect.fn("jsondb.set")(function* (storage: Storage) {
-				const encoded = yield* Schema.encode(StorageFromJson)(storage);
-				yield* fs.writeFileString(storagePath, encoded);
-				return storage;
-			});
-
-			const Read = Effect.gen(function* () {
-				const current = yield* fs
-					.readFileString(storagePath)
-					.pipe(Effect.flatMap(Schema.decode(StorageFromJson)), Effect.either);
-
-				if (Either.isRight(current)) {
-					return current.right;
-				}
-
-				switch (current.left._tag) {
-					case "SystemError":
-					case "ParseError": {
-						return yield* set(fallback);
-					}
-				}
-
-				return yield* current.left;
-			});
-
-			return {
-				get: withMutex(Read),
-				set: flow(set, withMutex),
-				update: Effect.fn("jsondb.update")(function* (
-					run: (data: Storage) => Storage,
-				) {
-					const current = yield* Read;
-					const updated = run(current);
-					return yield* set(updated);
-				}, withMutex),
-			};
-		}),
-	},
-) {}
