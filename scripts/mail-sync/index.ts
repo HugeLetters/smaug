@@ -33,7 +33,7 @@ const GmailSyncCommand = Command.make(
 		),
 		batchSize: Options.integer("batch-size").pipe(
 			Options.withAlias("s"),
-			Options.withDefault(10),
+			Options.withDefault(50),
 			Options.withDescription("Run the sync once and exit"),
 		),
 	},
