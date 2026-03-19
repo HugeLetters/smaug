@@ -313,8 +313,8 @@ export class SheetsWriteError extends Data.TaggedError("SheetsWriteError")<{
 	}
 }
 
-const RetrySchedule = pipe(
-	Schedule.exponential(Duration.seconds(1)),
+const RetrySchedule = Schedule.exponential(Duration.seconds(1)).pipe(
+	Schedule.jittered,
 	Schedule.intersect(Schedule.recurs(5)),
 	Schedule.tapInput((error: SheetsError) =>
 		Effect.logWarning(`Retrying Google Sheets request`, error),
