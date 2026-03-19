@@ -51,7 +51,7 @@ const GmailSyncCommand = Command.make(
 
 			task = task.pipe(
 				Effect.catchAll(Effect.logFatal),
-				Effect.schedule(Schedule.cron(schedule)),
+				Effect.repeat(Schedule.cron(schedule)),
 				Effect.ensureErrorType<never>(),
 			);
 		}
