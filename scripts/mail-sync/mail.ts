@@ -93,26 +93,6 @@ const processMail = Effect.fn("processMail")(function* (
 	const config = yield* LabelConfig;
 	yield* parseTransactionFromEmail(accounts, email).pipe(
 		Effect.tap((transaction) => saveTransaction(transaction)),
-		Effect.tapErrorTag("ParserSkip", () =>
-			Effect.logWarning(
-				`Skipped email ${email.id}`,
-				`Snippet: ${formatSnippet(email.snippet)}`,
-			),
-		),
-		Effect.tapErrorTag("ParserFailureList", (err) =>
-			Effect.logError(
-				`Failed to parse email ${email.id}`,
-				`Snippet: ${formatSnippet(email.snippet)}`,
-				err.failures.map((failure) => failure.error),
-			),
-		),
-		Effect.tapErrorTag("SheetsWriteError", (err) =>
-			Effect.logError(
-				`Failed to save email ${email.id}`,
-				`Snippet: ${formatSnippet(email.snippet)}`,
-				err,
-			),
-		),
 		Effect.matchEffect({
 			onSuccess(transaction) {
 				return applyLabel(email.id, config.label.processed).pipe(
@@ -126,20 +106,40 @@ const processMail = Effect.fn("processMail")(function* (
 			onFailure(error) {
 				switch (error._tag) {
 					case "ParserSkip":
-						return applyLabel(email.id, config.label.skipped);
+						return applyLabel(email.id, config.label.skipped).pipe(
+							Effect.zipLeft(
+								Effect.logWarning(
+									`Skipped email ${email.id}`,
+									`Snippet: ${formatSnippet(email.snippet)}`,
+								),
+							),
+						);
 					case "ParserFailureList":
-					case "SheetsWriteError":
-						return applyLabel(email.id, config.label.failed);
+					case "SheetsWriteError": {
+						return Effect.gen(function* () {
+							switch (error._tag) {
+								case "ParserFailureList":
+									yield* Effect.logError(
+										`Failed to parse email ${email.id}`,
+										`Snippet: ${formatSnippet(email.snippet)}`,
+										error.failures.map((failure) => failure.error),
+									);
+									break;
+								case "SheetsWriteError":
+									yield* Effect.logError(
+										`Failed to save email ${email.id}`,
+										`Snippet: ${formatSnippet(email.snippet)}`,
+										error,
+									);
+									break;
+							}
+
+							yield* applyLabel(email.id, config.label.failed);
+						});
+					}
 				}
 			},
 		}),
-		Effect.tapErrorTag("GmailError", (err) =>
-			Effect.logFatal(
-				`Failed to apply Gmail label for ${email.id}`,
-				`Snippet: ${formatSnippet(email.snippet)}`,
-				err,
-			),
-		),
 	);
 });
 

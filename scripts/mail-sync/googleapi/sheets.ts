@@ -160,13 +160,9 @@ export const appendRow = Effect.fn("sheets.writeRowToFirstEmpty")(function* (
 		.pipe(
 			Effect.retry(RetrySchedule),
 			Effect.catchTag("SheetsError", (err) =>
-				Effect.logError("Sheets append failed", err).pipe(
-					Effect.zipRight(
-						SheetsWriteError.fail(
-							`Failed to append row '${values.join(", ")}' at '${range}'`,
-							err.cause,
-						),
-					),
+				SheetsWriteError.fail(
+					`Failed to append row '${values.join(", ")}' at '${range}'`,
+					err.cause,
 				),
 			),
 		);
@@ -211,13 +207,9 @@ export const writeRow = Effect.fn("sheets.writeRow")(function* (
 		.pipe(
 			Effect.retry(RetrySchedule),
 			Effect.catchTag("SheetsError", (err) =>
-				Effect.logError("Sheets write failed", err).pipe(
-					Effect.zipRight(
-						SheetsWriteError.fail(
-							`Failed to write to row ${options.row}`,
-							err.cause,
-						),
-					),
+				SheetsWriteError.fail(
+					`Failed to write to row ${options.row}`,
+					err.cause,
 				),
 			),
 		);
