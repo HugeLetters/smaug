@@ -1,14 +1,17 @@
+import { flow } from "effect";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as ServiceMap from "effect/ServiceMap";
 
 export class SecretsError extends Data.TaggedError("SecretsError")<{
 	readonly message: string;
 	readonly cause?: unknown;
 }> {}
 
-export class Secrets extends Effect.Service<Secrets>()("smaug/Secrets", {
-	effect: Effect.fn(function* (domain: string = "finance-app") {
+export class Secrets extends ServiceMap.Service<Secrets>()("smaug/Secrets", {
+	make: Effect.fn(function* (domain: string = "finance-app") {
 		const service = `smaug/${domain}`;
 
 		const use = Effect.fn("secrets.use")(
@@ -55,15 +58,15 @@ export class Secrets extends Effect.Service<Secrets>()("smaug/Secrets", {
 		};
 	}),
 }) {
-	static live = Secrets.Default;
+	static live = flow(Secrets.make, Layer.effect(Secrets));
 
 	static forKey(key: string) {
 		return {
-			Get: Effect.flatMap(Secrets, (s) => s.get(key)),
+			Get: Secrets.use((s) => s.get(key)),
 			set(value: string) {
-				return Effect.flatMap(Secrets, (s) => s.set(key, value));
+				return Secrets.use((s) => s.set(key, value));
 			},
-			Delete: Effect.flatMap(Secrets, (s) => s.delete(key)),
+			Delete: Secrets.use((s) => s.delete(key)),
 		};
 	}
 }

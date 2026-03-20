@@ -4,37 +4,48 @@ import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
+import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
-import * as RateLimiter from "effect/RateLimiter";
 import * as Schedule from "effect/Schedule";
+import * as ServiceMap from "effect/ServiceMap";
+import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import type { sheets_v4 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
 
-export class SheetsClient extends Effect.Service<SheetsClient>()(
+export class SheetsClient extends ServiceMap.Service<SheetsClient>()(
 	"smaug/googleapi/sheets/SheetsClient",
 	{
-		scoped: Effect.gen(function* () {
+		make: Effect.gen(function* () {
 			const oauth = yield* OauthClient;
 			const client = yield* oauth.use((auth) =>
 				google.sheets({ version: "v4", auth }),
 			);
 
+			const rateLimiter = yield* RateLimiter.makeWithRateLimiter;
 			const rateLimitInterval = Duration.seconds(10);
-			const limiter = yield* RateLimiter.make({
+
+			const limiter = rateLimiter({
+				key: "sheets",
 				limit: 20,
-				interval: rateLimitInterval,
+				window: rateLimitInterval,
+				onExceeded: "delay",
 				algorithm: "token-bucket",
 			});
 
-			const readLimiter = yield* RateLimiter.make({
+			const readLimiter = rateLimiter({
+				key: "sheets-read",
 				limit: 10,
-				interval: rateLimitInterval,
+				window: rateLimitInterval,
+				onExceeded: "delay",
 				algorithm: "fixed-window",
 			});
-			const writeLimiter = yield* RateLimiter.make({
+
+			const writeLimiter = rateLimiter({
+				key: "sheets-write",
 				limit: 10,
-				interval: rateLimitInterval,
+				window: rateLimitInterval,
+				onExceeded: "delay",
 				algorithm: "fixed-window",
 			});
 
@@ -59,7 +70,7 @@ export class SheetsClient extends Effect.Service<SheetsClient>()(
 		}),
 	},
 ) {
-	static live = SheetsClient.Default;
+	static live = Layer.effect(SheetsClient, SheetsClient.make);
 }
 
 export type CellValue = string | number | boolean | null;
@@ -224,7 +235,7 @@ function makeSpareUpdateBatch(
 	return pipe(
 		Arr.chop(values, (arr) => {
 			const [before, after] = Arr.splitWhere(arr, Predicate.isNull);
-			if (!Arr.isNonEmptyArray(before)) {
+			if (!Arr.isArrayNonEmpty(before)) {
 				return [null, after.slice(1)];
 			}
 
@@ -309,14 +320,14 @@ export class SheetsWriteError extends Data.TaggedError("SheetsWriteError")<{
 	cause?: unknown;
 }> {
 	static fail(message: string, cause?: unknown) {
-		return new SheetsWriteError({ message, cause });
+		return Effect.fail(new SheetsWriteError({ message, cause }));
 	}
 }
 
 const RetrySchedule = Schedule.exponential(Duration.seconds(1)).pipe(
 	Schedule.jittered,
-	Schedule.intersect(Schedule.recurs(5)),
-	Schedule.tapInput((error: SheetsError) =>
-		Effect.logWarning(`Retrying Google Sheets request`, error),
+	Schedule.both(Schedule.recurs(5)),
+	Schedule.tapInput((input) =>
+		Effect.logWarning(`Retrying Google Sheets request`, input),
 	),
 );

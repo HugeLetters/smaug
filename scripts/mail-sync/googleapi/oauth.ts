@@ -1,16 +1,19 @@
+import { flow } from "effect";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as ServiceMap from "effect/ServiceMap";
 import { type Auth, google } from "googleapis";
 
 export class OauthError extends Data.TaggedError("OauthError")<{
 	cause: unknown;
 }> {}
 
-export class OauthClient extends Effect.Service<OauthClient>()(
+export class OauthClient extends ServiceMap.Service<OauthClient>()(
 	"smaug/googleapi/oauth/OauthClient",
 	{
-		effect: Effect.fn(function* (
+		make: Effect.fn(function* (
 			clientId: string,
 			clientSecret: Redacted.Redacted<string>,
 		) {
@@ -38,11 +41,11 @@ export class OauthClient extends Effect.Service<OauthClient>()(
 		}),
 	},
 ) {
-	static live = OauthClient.Default;
+	static live = flow(OauthClient.make, Layer.effect(OauthClient));
 }
 
-export const GetCredentials = OauthClient.use(
-	(client) => client.raw.credentials,
+export const GetCredentials = OauthClient.use((client) =>
+	Effect.succeed(client.raw.credentials),
 );
 
 export const updateCredentials = Effect.fn("oauth.update_credentials")(

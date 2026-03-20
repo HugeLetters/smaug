@@ -3,7 +3,7 @@ import * as Chunk from "effect/Chunk";
 import * as Data from "effect/Data";
 import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Either from "effect/Either";
+import * as Result from "effect/Result";
 import type { Google } from "./googleapi";
 
 export const parseTransactionFromEmail = Effect.fn("parseTransactionFromEmail")(
@@ -12,11 +12,11 @@ export const parseTransactionFromEmail = Effect.fn("parseTransactionFromEmail")(
 
 		for (const account of accounts) {
 			for (const parser of account.parsers) {
-				const attempt = yield* parser.parse(email).pipe(Effect.either);
+				const attempt = yield* parser.parse(email).pipe(Effect.result);
 
-				if (Either.isRight(attempt)) {
+				if (Result.isSuccess(attempt)) {
 					const transaction: Transaction = {
-						...attempt.right,
+						...attempt.success,
 						by: account,
 						meta: {
 							parserId: parser.parserId,
@@ -25,7 +25,7 @@ export const parseTransactionFromEmail = Effect.fn("parseTransactionFromEmail")(
 					return transaction;
 				}
 
-				const error = attempt.left;
+				const error = attempt.failure;
 				if (error._tag === "ParserFailure") {
 					failures = failures.pipe(
 						Chunk.append<ParserFailureWithMeta>({

@@ -1,7 +1,3 @@
-import * as Command from "@effect/platform/Command";
-import * as HttpServer from "@effect/platform/HttpServer";
-import * as HttpServerRequest from "@effect/platform/HttpServerRequest";
-import * as HttpServerResponse from "@effect/platform/HttpServerResponse";
 import * as BunHttpServer from "@effect/platform-bun/BunHttpServer";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
@@ -9,6 +5,11 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as HttpServer from "effect/unstable/http/HttpServer";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
 import { CodeChallengeMethod } from "google-auth-library";
 import { Secrets } from "~/server/lib/utils/secrets";
 import { Google } from "./googleapi";
@@ -223,11 +224,12 @@ const getOauth2Payload = Effect.fn(function* (
 		authUrl,
 	);
 
-	const browserExitCode = yield* Command.exitCode(
-		Command.make("open", authUrl).pipe(
-			Command.stderr("inherit"),
-			Command.stdout("inherit"),
-		),
+	const spawner = yield* ChildProcessSpawner;
+	const browserExitCode = yield* spawner.exitCode(
+		ChildProcess.make("open", [authUrl], {
+			stderr: "inherit",
+			stdout: "inherit",
+		}),
 	);
 
 	if (browserExitCode !== 0) {
@@ -237,7 +239,7 @@ const getOauth2Payload = Effect.fn(function* (
 	}
 
 	const payload = yield* Deferred.await(payloadDeferred).pipe(
-		Effect.timeoutFail({
+		Effect.timeoutOrElse({
 			duration: waitingDuration,
 			onTimeout() {
 				return AuthError.fail("Timed out waiting for OAuth callback");
@@ -253,7 +255,7 @@ export class AuthError extends Data.TaggedError("AuthError")<{
 	cause?: unknown;
 }> {
 	static fail(message: string, cause?: unknown) {
-		return new AuthError({ message, cause });
+		return Effect.fail(new AuthError({ message, cause }));
 	}
 }
 

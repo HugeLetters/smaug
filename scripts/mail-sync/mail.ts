@@ -4,7 +4,9 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
+import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
+import * as ServiceMap from "effect/ServiceMap";
 import {
 	type Account,
 	parseTransactionFromEmail,
@@ -14,10 +16,10 @@ import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 import type { Gmail } from "./googleapi/index.export";
 
-class LabelConfig extends Effect.Service<LabelConfig>()(
+class LabelConfig extends ServiceMap.Service<LabelConfig>()(
 	"smaug/scripts/mail-sync/mail/LabelConfig",
 	{
-		effect: Effect.gen(function* () {
+		make: Effect.gen(function* () {
 			const config = yield* AppConfig;
 
 			const label = yield* Effect.all({
@@ -43,7 +45,9 @@ class LabelConfig extends Effect.Service<LabelConfig>()(
 			};
 		}),
 	},
-) {}
+) {
+	static live = Layer.effect(LabelConfig, LabelConfig.make);
+}
 
 export const processMailBatch = Effect.fn("processMailBatch")(
 	function* (accounts: ReadonlyArray<Account>, size: number) {
@@ -54,7 +58,7 @@ export const processMailBatch = Effect.fn("processMailBatch")(
 			emails,
 			(email) => {
 				return processMail(accounts, email).pipe(
-					Effect.catchAll((err) =>
+					Effect.catch((err) =>
 						Effect.logError(
 							`Failed to process email: ${email.id}`,
 							`Snippet: ${formatSnippet(email.snippet)}`,
@@ -67,7 +71,7 @@ export const processMailBatch = Effect.fn("processMailBatch")(
 		);
 	},
 	// before each batch ensure labels exist
-	Effect.provide(LabelConfig.Default),
+	Effect.provide(LabelConfig.live),
 );
 
 function resolveAccountsQuery(accounts: ReadonlyArray<Account>) {
@@ -96,23 +100,23 @@ const processMail = Effect.fn("processMail")(function* (
 		Effect.matchEffect({
 			onSuccess(transaction) {
 				return applyLabel(email.id, config.label.processed).pipe(
-					Effect.zipLeft(
-						Effect.log(
+					Effect.tap(() => {
+						return Effect.log(
 							`Processed email ${email.id} for ${transaction.amount} by ${transaction.by.accountId}`,
-						),
-					),
+						);
+					}),
 				);
 			},
 			onFailure(error) {
 				switch (error._tag) {
 					case "ParserSkip":
 						return applyLabel(email.id, config.label.skipped).pipe(
-							Effect.zipLeft(
-								Effect.logWarning(
+							Effect.tap(() => {
+								return Effect.logWarning(
 									`Skipped email ${email.id}`,
 									`Snippet: ${formatSnippet(email.snippet)}`,
-								),
-							),
+								);
+							}),
 						);
 					case "ParserFailureList":
 					case "SheetsWriteError": {
@@ -138,6 +142,8 @@ const processMail = Effect.fn("processMail")(function* (
 						});
 					}
 				}
+
+				return Effect.fail(error);
 			},
 		}),
 	);
@@ -312,7 +318,7 @@ export class MailError extends Data.TaggedError("MailError")<{
 
 const RetrySchedule = pipe(
 	Schedule.exponential(Duration.seconds(1)),
-	Schedule.intersect(Schedule.recurs(5)),
+	Schedule.both(Schedule.recurs(5)),
 );
 
 function formatSnippet(snippet: string) {

@@ -1,15 +1,15 @@
-import * as Command from "@effect/cli/Command";
-import * as Options from "@effect/cli/Options";
-import * as Path from "@effect/platform/Path";
 import { BunRuntime } from "@effect/platform-bun";
-import * as BunCommandExecutor from "@effect/platform-bun/BunCommandExecutor";
-import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
-import * as BunPath from "@effect/platform-bun/BunPath";
-import * as BunTerminal from "@effect/platform-bun/BunTerminal";
+import * as BunServices from "@effect/platform-bun/BunServices";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Cron from "effect/Cron";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
+import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
+import * as Command from "effect/unstable/cli/Command";
+import * as Flag from "effect/unstable/cli/Flag";
+import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 import { Accounts } from "./account.config";
@@ -18,6 +18,7 @@ import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 import { processMailBatch } from "./mail";
 
+// TODO gmail-sync | use ErrorReporter for error logging? | by Evgenii Perminov at Fri, 20 Mar 2026 02:37:51 GMT
 const sync = Effect.fn(function* (batchSize: number) {
 	yield* SetupAuth;
 
@@ -28,14 +29,14 @@ const sync = Effect.fn(function* (batchSize: number) {
 const GmailSyncCommand = Command.make(
 	"gmail-sync",
 	{
-		runOnce: Options.boolean("run-once").pipe(
-			Options.withAlias("o"),
-			Options.withDescription("Run the sync once and exit"),
+		runOnce: Flag.boolean("run-once").pipe(
+			Flag.withAlias("o"),
+			Flag.withDescription("Run the sync once and exit"),
 		),
-		batchSize: Options.integer("batch-size").pipe(
-			Options.withAlias("s"),
-			Options.withDefault(50),
-			Options.withDescription("Run the sync once and exit"),
+		batchSize: Flag.integer("batch-size").pipe(
+			Flag.withAlias("s"),
+			Flag.withDefault(50),
+			Flag.withDescription("Run the sync once and exit"),
 		),
 	},
 	Effect.fn(function* ({ runOnce, batchSize }) {
@@ -51,9 +52,9 @@ const GmailSyncCommand = Command.make(
 			});
 
 			task = task.pipe(
-				Effect.catchAll(Effect.logFatal),
 				Effect.repeat(Schedule.cron(schedule)),
-				Effect.ensureErrorType<never>(),
+				Effect.catch(Effect.logFatal),
+				Effect.satisfiesErrorType<never>(),
 			);
 		}
 
@@ -61,20 +62,16 @@ const GmailSyncCommand = Command.make(
 	}),
 ).pipe(Command.withDescription("Sync Gmail transaction emails to Google Docs"));
 
-const cli = Command.run(GmailSyncCommand, {
-	name: "Gmail Sync",
+const program = Command.run(GmailSyncCommand, {
 	version: "v1.0.0",
 });
 
-const FileSystemLive = BunFileSystem.layer;
-const PathLive = BunPath.layer;
-const CommandExecutorLive = BunCommandExecutor.layer.pipe(
-	Layer.provide(FileSystemLive),
-);
-const TerminalLive = BunTerminal.layer;
-
+const BunServicesLive = BunServices.layer;
 const SecretsLive = Secrets.live("gmail-sync");
 const AppConfigLive = AppConfig.live.pipe(Layer.provide(SecretsLive));
+
+const layerStoreMemory = RateLimiter.layerStoreMemory;
+const RateLimiterLive = RateLimiter.layer.pipe(Layer.provide(layerStoreMemory));
 
 const OauthLive = Effect.gen(function* () {
 	const config = yield* AppConfig;
@@ -82,14 +79,14 @@ const OauthLive = Effect.gen(function* () {
 		config.oauth.clientId,
 		config.oauth.clientSecret,
 	);
-}).pipe(Layer.unwrapEffect, Layer.provide([AppConfigLive]));
+}).pipe(Layer.unwrap, Layer.provide([AppConfigLive]));
 
 const GmailLive = Google.Gmail.GmailClient.live.pipe(
-	Layer.provide([AppConfigLive, OauthLive]),
+	Layer.provide([OauthLive, RateLimiterLive]),
 );
 
 const SheetsLive = Google.Sheets.SheetsClient.live.pipe(
-	Layer.provide([AppConfigLive, OauthLive]),
+	Layer.provide([OauthLive, RateLimiterLive]),
 );
 
 const ConfigLive = Effect.gen(function* () {
@@ -99,19 +96,19 @@ const ConfigLive = Effect.gen(function* () {
 		path: path.resolve(import.meta.dir, ".config.json"),
 	});
 
-	return Layer.setConfigProvider(provider);
-}).pipe(Layer.unwrapEffect, Layer.provide([PathLive, FileSystemLive]));
+	return ConfigProvider.layer(provider);
+}).pipe(Layer.unwrap, Layer.provide([BunServicesLive]));
 
 const MainLive = Layer.mergeAll(
-	GmailLive,
-	SheetsLive,
-	FileSystemLive,
-	PathLive,
-	TerminalLive,
+	BunServicesLive,
+	SecretsLive,
 	AppConfigLive,
 	OauthLive,
-	SecretsLive,
-	CommandExecutorLive,
+	GmailLive,
+	SheetsLive,
+	Logger.layer([
+		Logger.consolePretty({ colors: true, mode: "tty", stderr: true }),
+	]),
 ).pipe(Layer.provideMerge(ConfigLive));
 
-cli(process.argv).pipe(Effect.provide(MainLive), BunRuntime.runMain);
+program.pipe(Effect.provide(MainLive), BunRuntime.runMain({}));

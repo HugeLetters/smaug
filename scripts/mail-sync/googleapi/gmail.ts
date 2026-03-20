@@ -4,10 +4,12 @@ import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
-import * as RateLimiter from "effect/RateLimiter";
 import * as Schedule from "effect/Schedule";
+import * as ServiceMap from "effect/ServiceMap";
+import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
@@ -16,19 +18,22 @@ export class GmailError extends Data.TaggedError("GmailError")<{
 	cause: unknown;
 }> {}
 
-export class GmailClient extends Effect.Service<GmailClient>()(
+export class GmailClient extends ServiceMap.Service<GmailClient>()(
 	"smaug/googleapi/gmail/GmailClient",
 	{
-		scoped: Effect.gen(function* () {
+		make: Effect.gen(function* () {
 			const oauth = yield* OauthClient;
 			const client = yield* oauth.use((auth) =>
 				google.gmail({ version: "v1", auth }),
 			);
 
-			const limiter = yield* RateLimiter.make({
+			const rateLimiter = yield* RateLimiter.makeWithRateLimiter;
+			const limiter = rateLimiter({
+				key: "gmail",
 				limit: 100,
-				interval: "10  seconds",
+				window: "10 seconds",
 				algorithm: "token-bucket",
+				onExceeded: "delay",
 			});
 
 			const use = Effect.fn("gmail.use")(
@@ -44,13 +49,11 @@ export class GmailClient extends Effect.Service<GmailClient>()(
 				limiter,
 			);
 
-			return {
-				use,
-			};
+			return { use };
 		}),
 	},
 ) {
-	static live = GmailClient.Default;
+	static live = Layer.effect(GmailClient, GmailClient.make);
 }
 
 export namespace Query {
@@ -243,7 +246,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 					.pipe(
 						Effect.retry(RetrySchedule),
 						Effect.tapError(Effect.logError),
-						Effect.catchAll(() => Effect.succeed(null)),
+						Effect.orElseSucceed(() => null),
 					);
 
 				if (!fullMessage) {
@@ -439,5 +442,5 @@ export const ME = "me";
 
 const RetrySchedule = Duration.seconds(1).pipe(
 	Schedule.exponential,
-	Schedule.intersect(Schedule.recurs(5)),
+	Schedule.both(Schedule.recurs(5)),
 );
