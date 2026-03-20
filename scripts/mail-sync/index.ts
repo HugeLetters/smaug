@@ -2,6 +2,7 @@ import { BunRuntime } from "@effect/platform-bun";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Cron from "effect/Cron";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -12,6 +13,7 @@ import * as Flag from "effect/unstable/cli/Flag";
 import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
+import { Schedule$ } from "~/utils/schedule";
 import { Accounts } from "./account.config";
 import { SetupAuth } from "./auth";
 import { AppConfig } from "./config";
@@ -20,7 +22,18 @@ import { processMailBatch } from "./mail";
 
 // TODO gmail-sync | use ErrorReporter for error logging? | by Evgenii Perminov at Fri, 20 Mar 2026 02:37:51 GMT
 const sync = Effect.fn(function* (batchSize: number) {
-	yield* SetupAuth;
+	yield* SetupAuth.pipe(
+		Effect.retry(
+			Schedule.exponential("1 second").pipe((s) =>
+				Schedule$.tap(s, (err, duration) =>
+					Effect.logWarning(
+						`Authentication failed. Retrying in ${Duration.format(duration)}`,
+						err,
+					),
+				),
+			),
+		),
+	);
 
 	yield* processMailBatch(Accounts, batchSize);
 	yield* Effect.log("Batch processing finished");
