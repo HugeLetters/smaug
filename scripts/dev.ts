@@ -1,10 +1,11 @@
-import { Command, FileSystem } from "@effect/platform";
-import * as Path from "@effect/platform/Path";
-import { BunContext, BunRuntime } from "@effect/platform-bun";
+import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { Logger } from "effect";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
+import * as ChildProcess from "effect/unstable/process/ChildProcess";
 
 class DevError extends Data.TaggedError("DevError")<{
 	readonly message: string;
@@ -16,12 +17,13 @@ Effect.gen(function* () {
 
 	const PaletteGenerator = Effect.gen(function* () {
 		const script = path.resolve(import.meta.dir, "generate-palette.ts");
-		const cmd = Command.make("bun", "run", script).pipe(
-			Command.stdout("inherit"),
-			Command.stderr("inherit"),
-		);
+		const cmd = ChildProcess.make("bun", ["run", script], {
+			stdout: "inherit",
+			stderr: "inherit",
+		});
 		const Run = Effect.gen(function* () {
-			const exit = yield* Command.exitCode(cmd);
+			const process = yield* cmd;
+			const exit = yield* process.exitCode;
 			if (exit !== 0) {
 				return yield* new DevError({
 					message: `Palette generator exited with ${exit}`,
@@ -30,7 +32,7 @@ Effect.gen(function* () {
 		});
 
 		yield* Effect.log("Generating initial palette...");
-		yield* Run.pipe(Effect.catchAll(Effect.logFatal));
+		yield* Run.pipe(Effect.catch(Effect.logFatal));
 		yield* Effect.log("Initial palette generated successfully.");
 
 		const paletteFile = path.resolve(
@@ -49,16 +51,17 @@ Effect.gen(function* () {
 				);
 				yield* Run;
 				yield* Effect.log("Palette regenerated successfully.");
-			}, Effect.catchAll(Effect.logFatal)),
+			}, Effect.catch(Effect.logFatal)),
 		);
 	});
 
 	const DebBuild = Effect.gen(function* () {
-		const cmd = Command.make("vinxi", "dev").pipe(
-			Command.stdout("inherit"),
-			Command.stderr("inherit"),
-		);
-		const exit = yield* Command.exitCode(cmd);
+		const cmd = ChildProcess.make("vinxi", ["dev"], {
+			stderr: "inherit",
+			stdout: "inherit",
+		});
+		const process = yield* cmd;
+		const exit = yield* process.exitCode;
 		if (exit !== 0) {
 			return yield* new DevError({
 				message: `Dev server exited with ${exit}`,
@@ -68,7 +71,8 @@ Effect.gen(function* () {
 
 	yield* Effect.all([PaletteGenerator, DebBuild], { concurrency: "unbounded" });
 }).pipe(
-	Effect.catchAll(Effect.logFatal),
-	Effect.provide([Logger.pretty, BunContext.layer]),
+	Effect.catch(Effect.logFatal),
+	Effect.provide([Logger.layer([Logger.consolePretty()]), BunServices.layer]),
+	Effect.scoped,
 	BunRuntime.runMain,
 );

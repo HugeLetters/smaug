@@ -3,7 +3,7 @@ import { fail } from "node:assert/strict";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Fn from "effect/Function";
-import { UnknownDiffer } from "~/server/lib/utils/differ";
+import { Differ } from "~/server/lib/utils/differ";
 import { Stdout } from "~/server/lib/utils/stdout";
 
 /**
@@ -51,14 +51,15 @@ const unexpectedSuccess = Fn.flow(
  * ```
  */
 
-export const expectEquivalence = Effect.fn("expectEquivalence", {
-	captureStackTrace: true,
-})(function* <T>(received: T, expected: T) {
-	const patch = UnknownDiffer.differ.diff(expected, received);
-	const diff = UnknownDiffer.Formatter.format(patch);
+export const expectEquivalence = Effect.fn("expectEquivalence")(function* <T>(
+	received: T,
+	expected: T,
+) {
+	const patch = Differ.Unknown.differ.diff(expected, received);
+	const diff = Differ.Unknown.format(patch);
 
 	const areEquivalent = Equal.equals(received, expected);
-	const isDiffEmpty = patch === UnknownDiffer.differ.empty;
+	const isDiffEmpty = patch === Differ.Unknown.differ.empty;
 	if (!areEquivalent && isDiffEmpty) {
 		yield* Effect.logWarning(
 			"Values appear structurally equal but do not implement Effect's Equal interface.",
