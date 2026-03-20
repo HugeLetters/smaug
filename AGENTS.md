@@ -1,19 +1,23 @@
 # Finance App Project - Agent Reference
 
 ## Agent Guidelines
+
 - Make concise plans, sacrificing grammar for efficiency.
 - After making a plan, provide a list of unresolved questions for the user to answer.
 
 ## LLM Interaction Guidelines
+
 - Verify tool results before proceeding; batch operations for efficiency.
 - Ask clarifying questions before major changes.
 - Follow security best practices; avoid exposing secrets.
 - Run lint and typecheck after edits.
 
 ## Project Overview
+
 Family finance app for tracking spending, investments, and shared expenses with live sync. Initialized with Solid Start (basic routes, sample components), Bun runtime, Playwright testing, and implemented color palette system with semantic colors.
 
 ## Desired Features
+
 - **Spending Table**: Track purchases by date, spender, category, comment, recurring status.
 - **Personal Tracking**: Option to mark transactions private.
 - **Multi-Currency**: Purchases with currencies; display preferred with hover for original.
@@ -26,6 +30,7 @@ Family finance app for tracking spending, investments, and shared expenses with 
 - **Command Palette**: Quick actions.
 
 ## Technology Stack
+
 - **Runtime**: Bun JS - https://bun.sh/docs (run app, manage deps with bun add/install/run, scripts)
 - **Effect System**: Effect - https://effect.website/ ([API Reference](https://effect.website/docs/additional-resources/api-reference/)) (FP library for TS; wildcard imports like `import * as Effect from "effect/Effect"`; platform packages (@effect/platform, @effect/platform-bun, @effect/platform-node) for file system and process operations; Differ API for change tracking)
 - **Schema Validation**: effect/schema - https://effect-ts.github.io/effect/docs/schema (type-safe validation; use `Schema.transformOrFail` for parsing; avoid throwing in decode)
@@ -41,11 +46,13 @@ Family finance app for tracking spending, investments, and shared expenses with 
 - Absolutely do not want to use a cloud provider - everything is self-hosted
 
 ## Core Modules
+
 - **Differ Module** (`src/utils/differ/index.ts`): Provides type-safe differencers for computing and applying patches to data structures (strings, objects, arrays, maps, sets). Uses Effect's Differ API with tagged unions for patches and Match for exhaustive pattern matching. Supports live sync by enabling efficient change tracking and application. Includes Formatter namespace for visualizing patches as tree structures for debugging.
 
 ## Development Environment
+
 - **Code Quality**: Biome handles linting and formatting with recommended rules enabled. Run `bun run lint` to check for issues, `bun run lint:fix` to auto-apply fixes, and `bun run format` to format code. Always run linting after code changes to ensure consistency.
-- **Type Checking**: Use `npx tsc --noEmit` for comprehensive TypeScript type checking. The project uses strict mode with Effect language service integration for better developer experience.
+- **Type Checking**: Use `bun run tsc` for comprehensive TypeScript type checking. The project uses strict mode with Effect language service integration for better developer experience.
 - **VSCode Integration**: Project includes `.vscode/settings.json` configured for Biome (format on save, default formatter for JS/TS/JSON/CSS files, code actions for imports and fixes). The Biome and Effect language service extensions are recommended in `.vscode/extensions.json`.
 - **Git**: Repository initialized for version control. Commit changes after verifying tests pass.
 - **Testing**: Playwright tests are in `tests/` directory. Scripts added: `bun run e2e` (headless), `bun run e2e:ui` (interactive UI). Config in `playwright.config.ts` auto-starts dev server at http://localhost:3000. Run tests after starting dev server or use config for automatic server management.
@@ -54,6 +61,7 @@ Family finance app for tracking spending, investments, and shared expenses with 
 - **Color Palette Updates**: After modifying `src/color/palette.ts`, regenerate `src/color/palette.css` by running `scripts/build.ts` or manually calling the `GeneratePalette` effect to export updated CSS variables and format the file.
 
 ## Effect Patterns
+
 - **Effect Composition**: Use `Effect.gen` for sequential effects and `Effect.all` for concurrent execution. Combine with `Effect.map` and `Effect.flatMap`. Example: `Effect.gen(function*() { const a = yield* Effect.succeed(1); return a + 1; })`
 - **Error Handling**: Prefer `Effect.fail` with typed errors over throwing. Use `ParseResult.Forbidden` for schema validation errors.
 - **Functional Functions**: Use `Effect.fn` for curried, composable effectful functions.
@@ -66,6 +74,7 @@ Family finance app for tracking spending, investments, and shared expenses with 
 - **Pattern Matching**: Prefer `Match.value(...).pipe(Match.tagsExhaustive({...}))` over switch statements for exhaustive, type-safe pattern matching on tagged unions.
 
 ## Code Conventions
+
 - File naming: Use kebab-case for routes/components (e.g., `spending-table.tsx`), camelCase for utilities and plugins.
 - Imports: Group external libs first, then internal modules; sort alphabetically.
 - Commit messages: Start with verb (add, fix, refactor), summarize change, keep under 50 chars.
@@ -75,6 +84,7 @@ Family finance app for tracking spending, investments, and shared expenses with 
 - **Refactoring**: When refactoring, prefer Effect's Match API over switch statements for better type safety and consistency. Ensure exhaustive matching with Match.tagsExhaustive.
 
 ## Color System
+
 - **Semantic Colors**: Restrict color tokens to fixed semantic names ("primary", "secondary", "accent", "neutral", "success", "warning", "error") using union types for compile-time safety. "Neutral" was recently added for gray tones with very low chroma (e.g., 0.01) to ensure true gray shades.
 - **Type Aliases**: Use `BaseColors` for `Record<SemanticColor, string>` and `Palette` for `Record<SemanticColor, ColorShades>` to improve readability.
 - **Palette Generation**: Generate palettes concurrently using `Effect.all` on base color records. Use `generateShades` with OKLCH strings for consistent shade calculation. Each semantic color generates 10 shades (50-900) using predefined lightness and chroma scales.
@@ -85,6 +95,7 @@ Family finance app for tracking spending, investments, and shared expenses with 
 - **OKLCH Best Practices**: OKLCH provides perceptually uniform colors; derive L and C from base for all shades using relative deltas/factors to ensure consistent contrast and accessibility. For lightness, use decreasing scales (50 lightest, 900 darkest); for chroma, use bell-curve scaling (low at extremes, high mid-range). Handle very light/dark bases by clamping L to [0,1] and scaling C proportionally to avoid gamut clipping. Research standard generators (e.g., sine waves for chroma) for advanced patterns, but keep derivation simple for maintainability.
 
 ## Testing
+
 - **Unit Testing**: Always use Effect-based test harness in `src/test/index.ts` for testing Effect computations with Bun:test.
 - **E2E Testing**: Playwright for end-to-end testing.
 - **Test Structure**: Unit tests anywhere in `src/` with `*.test.ts` pattern, using harness from `src/test/index.ts`.
