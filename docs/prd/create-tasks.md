@@ -1,1 +1,0 @@
-look through `./AGENTS.MD` and create prd documents for things which are needed to be done

@@ -20,7 +20,6 @@ import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 import { processMailBatch } from "./mail";
 
-// TODO gmail-sync | use ErrorReporter for error logging? | by Evgenii Perminov at Fri, 20 Mar 2026 02:37:51 GMT
 const sync = Effect.fn(function* (batchSize: number) {
 	yield* SetupAuth.pipe(
 		Effect.retry(
