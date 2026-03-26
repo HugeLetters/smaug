@@ -98,17 +98,19 @@ const GetValidAccessToken = Effect.gen(function* () {
 		return renewed;
 	}
 
-	const refreshed = yield* oauth
+	const refreshedCreds = yield* oauth
 		.use((c) => c.refreshAccessToken())
 		.pipe(
-			Effect.tap((res) => Google.Oauth.updateCredentials(res.credentials)),
-			Effect.map((res) => res.credentials.access_token ?? null),
-			Effect.flatMap(validateToken),
+			Effect.map((res) => res.credentials),
 			Effect.catchTag("OauthError", () => Effect.succeed(null)),
 		);
 
-	if (refreshed !== null) {
-		return refreshed;
+	if (refreshedCreds !== null) {
+		const refreshed = yield* validateToken(refreshedCreds.access_token ?? null);
+		if (refreshed !== null) {
+			yield* Google.Oauth.updateCredentials(refreshedCreds);
+			return refreshed;
+		}
 	}
 
 	return null;
