@@ -21,44 +21,26 @@ const RequiredScopes = [
 ];
 
 export const SetupAuth = Effect.gen(function* () {
-	const isClientAccessValid = yield* Google.Oauth.GetCredentials.pipe(
-		Effect.map((c) => c.access_token ?? null),
-		Effect.flatMap((token) => {
-			if (token === null) {
-				return Effect.succeed(false);
-			}
+	const clientToken = yield* GetValidAccessToken;
 
-			return checkTokenPermission(token);
-		}),
+	const clientRefreshToken = yield* Google.Oauth.GetCredentials.pipe(
+		Effect.map((c) => c.refresh_token ?? null),
 	);
-
-	if (isClientAccessValid) {
-		const refreshToken = yield* Google.Oauth.GetCredentials.pipe(
-			Effect.map((c) => c.refresh_token ?? null),
-		);
-		if (refreshToken !== null) {
-			yield* RefreshSecret.set(refreshToken);
+	if (clientToken !== null) {
+		if (clientRefreshToken !== null) {
+			yield* RefreshSecret.set(clientRefreshToken);
 		}
 
 		return;
 	}
 
-	const clientRefreshToken = yield* Google.Oauth.GetCredentials.pipe(
-		Effect.map((c) => c.refresh_token ?? null),
-	);
-	if (clientRefreshToken !== null) {
-		const refreshedToken = yield* refreshAccessToken(clientRefreshToken);
-		if (refreshedToken !== null) {
-			yield* RefreshSecret.set(clientRefreshToken);
-			return;
-		}
-	}
-
 	const storedRefreshToken = yield* RefreshSecret.Get;
+
 	if (storedRefreshToken !== null) {
-		const refreshedToken = yield* refreshAccessToken(
-			Redacted.value(storedRefreshToken),
+		yield* storedRefreshToken.pipe(Redacted.value, (token) =>
+			Google.Oauth.updateCredentials({ refresh_token: token }),
 		);
+		const refreshedToken = yield* GetValidAccessToken;
 		if (refreshedToken !== null) {
 			return;
 		}
@@ -67,7 +49,11 @@ export const SetupAuth = Effect.gen(function* () {
 	yield* RegenerateCredentials;
 });
 
-const checkTokenPermission = Effect.fn(function* (token: string) {
+const validateToken = Effect.fn(function* (token: string | null) {
+	if (!token) {
+		return null;
+	}
+
 	const oauth = yield* Google.Oauth.OauthClient;
 
 	const info = yield* oauth
@@ -75,50 +61,57 @@ const checkTokenPermission = Effect.fn(function* (token: string) {
 		.pipe(Effect.catchTag("OauthError", () => Effect.succeed(null)));
 
 	if (info === null) {
-		return false;
+		return null;
 	}
 
-	return areScopesSufficient(info.scopes);
+	if (!areScopesSufficient(info.scopes)) {
+		return null;
+	}
+
+	return token;
 });
 
 const areScopesSufficient = (scopes: ReadonlyArray<string>) =>
 	Arr.difference(RequiredScopes, scopes).length === 0;
 
-const GetAccessToken = Effect.gen(function* () {
+const GetValidAccessToken = Effect.gen(function* () {
 	const oauth = yield* Google.Oauth.OauthClient;
 	const token = yield* Google.Oauth.GetCredentials.pipe(
 		Effect.map((c) => c.access_token ?? null),
+		Effect.flatMap(validateToken),
 	);
+
 	if (token !== null) {
 		return token;
 	}
 
-	const res = yield* oauth
+	const renewed = yield* oauth
 		.use((c) => c.getAccessToken())
-		.pipe(Effect.catchTag("OauthError", () => Effect.succeed(null)));
-	const refreshed = res?.token;
-	if (!refreshed) {
-		return null;
+		.pipe(
+			Effect.map((res) => res.token ?? null),
+			Effect.flatMap(validateToken),
+			Effect.catchTag("OauthError", () => Effect.succeed(null)),
+		);
+
+	if (renewed !== null) {
+		yield* Google.Oauth.updateCredentials({ access_token: renewed });
+		return renewed;
 	}
 
-	yield* Google.Oauth.updateCredentials({ access_token: refreshed });
-	return refreshed;
-});
+	const refreshed = yield* oauth
+		.use((c) => c.refreshAccessToken())
+		.pipe(
+			Effect.tap((res) => Google.Oauth.updateCredentials(res.credentials)),
+			Effect.map((res) => res.credentials.access_token ?? null),
+			Effect.flatMap(validateToken),
+			Effect.catchTag("OauthError", () => Effect.succeed(null)),
+		);
 
-const refreshAccessToken = Effect.fn(function* (refreshToken: string) {
-	yield* Google.Oauth.updateCredentials({ refresh_token: refreshToken });
-
-	const token = yield* GetAccessToken;
-	if (token === null) {
-		return null;
+	if (refreshed !== null) {
+		return refreshed;
 	}
 
-	const isValidToken = yield* checkTokenPermission(token);
-	if (!isValidToken) {
-		return null;
-	}
-
-	return token;
+	return null;
 });
 
 interface OAuthCallbackPayload {
