@@ -47,6 +47,12 @@ export class OauthClient extends ServiceMap.Service<OauthClient>()(
 export const GetCredentials = OauthClient.use((client) =>
 	Effect.succeed(client.raw.credentials),
 );
+export const GetAccessToken = GetCredentials.pipe(
+	Effect.map((c) => c.access_token ?? null),
+);
+export const GetRefreshToken = GetCredentials.pipe(
+	Effect.map((c) => c.refresh_token ?? null),
+);
 
 export const updateCredentials = Effect.fn("oauth.update_credentials")(
 	function* (update: Partial<Auth.Credentials>) {
