@@ -23,10 +23,10 @@ const RequiredScopes = [
 export const SetupAuth = Effect.gen(function* () {
 	const clientToken = yield* GetValidAccessToken;
 
-	const clientRefreshToken = yield* Google.Oauth.GetCredentials.pipe(
-		Effect.map((c) => c.refresh_token ?? null),
-	);
 	if (clientToken !== null) {
+		const clientRefreshToken = yield* Google.Oauth.GetCredentials.pipe(
+			Effect.map((c) => c.refresh_token ?? null),
+		);
 		if (clientRefreshToken !== null) {
 			yield* RefreshSecret.set(clientRefreshToken);
 		}
@@ -83,6 +83,13 @@ const GetValidAccessToken = Effect.gen(function* () {
 
 	if (token !== null) {
 		return token;
+	}
+
+	const refreshToken = yield* Google.Oauth.GetCredentials.pipe(
+		Effect.map((c) => c.refresh_token ?? null),
+	);
+	if (!refreshToken) {
+		return null;
 	}
 
 	const renewed = yield* oauth
