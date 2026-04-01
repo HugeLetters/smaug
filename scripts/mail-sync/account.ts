@@ -3,6 +3,9 @@ import * as Chunk from "effect/Chunk";
 import * as Data from "effect/Data";
 import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as HashMap from "effect/HashMap";
+import * as Iterable from "effect/Iterable";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import type { Google } from "./googleapi";
 
@@ -118,3 +121,38 @@ export interface ParserErrorMeta {
 }
 
 export type ParserError = ParserSkip | ParserFailure;
+
+export namespace Merchant {
+	export interface MerchantMeta {
+		name: string;
+		category: TransactionCategory;
+	}
+
+	export type MerchantMap = HashMap.HashMap<string, MerchantMeta>;
+
+	export type AddToMerchantMap = (map: MerchantMap) => MerchantMap;
+
+	export function createMerchantMap(populator: Iterable<AddToMerchantMap>) {
+		return Iterable.reduce(
+			populator,
+			HashMap.empty<string, MerchantMeta>(),
+			(map, add) => add(map),
+		);
+	}
+
+	export function add(value: MerchantMeta, keys: Iterable<string>) {
+		return Iterable.map(keys, (key) => HashMap.set(key.toUpperCase(), value));
+	}
+
+	export function getMerchant(map: MerchantMap, merchant: string) {
+		return map.pipe(
+			HashMap.get(merchant.toUpperCase()),
+			Option.getOrElse(
+				(): MerchantMeta => ({
+					name: merchant,
+					category: TransactionCategory.Other,
+				}),
+			),
+		);
+	}
+}
