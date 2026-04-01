@@ -58,7 +58,7 @@ export enum TransactionCategory {
 	/** Restaraunts/take-out/food delivery */
 	Food = "Food",
 	/** Rent, phone bills, internet */
-	RentAndUtilities = "RentAndUtilities",
+	RentAndUtilities = "Rent & Utilities",
 	/** Public transport, taxi */
 	Transportation = "Transportation",
 	Clothing = "Clothing",
