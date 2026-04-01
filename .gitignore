@@ -34,4 +34,4 @@ Thumbs.db
 # Reference libraries
 reference/library
 
-scripts/mail-sync/account.config.ts
+scripts/mail-sync/account.config
