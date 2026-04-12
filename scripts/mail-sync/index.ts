@@ -48,7 +48,9 @@ const GmailSyncCommand = Command.make(
 		batchSize: Flag.integer("batch-size").pipe(
 			Flag.withAlias("s"),
 			Flag.withDefault(50),
-			Flag.withDescription("Run the sync once and exit"),
+			Flag.withDescription(
+				"How many emails to query during a single process run",
+			),
 		),
 	},
 	Effect.fn(function* ({ runOnce, batchSize }) {
