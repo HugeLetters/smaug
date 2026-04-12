@@ -47,7 +47,7 @@ Family finance app for tracking spending, investments, and shared expenses with 
 
 ## Core Modules
 
-- **Differ Module** (`src/utils/differ/index.ts`): Provides type-safe differencers for computing and applying patches to data structures (strings, objects, arrays, maps, sets). Uses Effect's Differ API with tagged unions for patches and Match for exhaustive pattern matching. Supports live sync by enabling efficient change tracking and application. Includes Formatter namespace for visualizing patches as tree structures for debugging.
+- **Differ Module** (`src/server/lib/utils/differ/index.ts`): Provides type-safe differencers for computing and applying patches to data structures (strings, objects, arrays, maps, sets). Uses Effect's Differ API with tagged unions for patches and Match for exhaustive pattern matching. Supports live sync by enabling efficient change tracking and application. Includes Format namespace for visualizing patches as tree structures for debugging.
 
 ## Development Environment
 
