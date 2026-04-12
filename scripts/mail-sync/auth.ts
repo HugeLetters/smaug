@@ -83,7 +83,7 @@ const GetValidAccessToken = Effect.gen(function* () {
 	}
 
 	const refreshToken = yield* Google.Oauth.GetRefreshToken;
-	if (!refreshToken) {
+	if (refreshToken === null) {
 		return null;
 	}
 

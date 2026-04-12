@@ -5,6 +5,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
 import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
 import * as ServiceMap from "effect/ServiceMap";
 import {
@@ -78,9 +79,9 @@ function resolveAccountsQuery(accounts: ReadonlyArray<Account>) {
 	return pipe(
 		accounts,
 		Iterable.map((account) => account.query),
-		Iterable.filter((query) => query !== null),
+		Iterable.filter(Predicate.isNotNull),
 		Iterable.reduce(null, (acc: Gmail.Query.Query | null, query) => {
-			if (acc === null) {
+			if (Predicate.isNull(acc)) {
 				return query;
 			}
 

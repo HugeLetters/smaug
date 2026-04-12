@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
 import * as ServiceMap from "effect/ServiceMap";
 import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
@@ -206,8 +207,7 @@ export interface Email {
 	readonly id: string;
 	readonly snippet: string;
 	readonly content: Content;
-	readonly from: string | null;
-	readonly forwardedBy: string | null;
+	readonly sender: Sender;
 	readonly subject: string | null;
 	readonly receivedAt: DateTime.DateTime | null;
 }
@@ -232,7 +232,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 			Effect.fnUntraced(function* (message) {
 				const id = message.id;
 				if (!id) {
-					return;
+					return null;
 				}
 
 				const fullMessage = yield* gmail
@@ -250,7 +250,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 					);
 
 				if (!fullMessage) {
-					return;
+					return null;
 				}
 
 				const payload = fullMessage.data.payload ?? null;
@@ -262,8 +262,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 					id,
 					snippet: fullMessage.data.snippet ?? "",
 					content,
-					from: sender.from,
-					forwardedBy: sender.forwardedBy,
+					sender,
 					subject,
 					receivedAt,
 				};
@@ -272,7 +271,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 			}),
 			{ concurrency: "unbounded" },
 		),
-		Effect.map(Arr.filter((v) => v !== undefined)),
+		Effect.map(Arr.filter(Predicate.isNotNull)),
 	);
 });
 
