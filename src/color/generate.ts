@@ -1,7 +1,9 @@
-import { Command, FileSystem, Path } from "@effect/platform";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Record from "effect/Record";
+import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import { type Palette, Presets } from "./palette";
 
 function generatePaletteCss(palette: Palette): string {
@@ -34,8 +36,10 @@ export const GeneratePalette = Effect.gen(function* () {
 
 	yield* fs.writeFileString(outputPath, css);
 
-	const formatCommand = Command.make("bun", "run", "format", outputPath);
-	const exit = yield* Command.exitCode(formatCommand);
+	const formatCommand = ChildProcess.make("bun", ["run", "format", outputPath]);
+
+	const formatProcess = yield* formatCommand;
+	const exit = yield* formatProcess.exitCode;
 	if (exit !== 0) {
 		return yield* new GeneratePaletteError({
 			message: `Format exited with ${exit}`,

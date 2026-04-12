@@ -1,5 +1,5 @@
 {
-	"name": "example-with-tailwindcss",
+	"name": "smaug",
 	"type": "module",
 	"scripts": {
 		"dev": "bun run ./scripts/dev.ts",
@@ -11,26 +11,29 @@
 		"typecheck": "tsc --noEmit",
 		"e2e": "playwright test",
 		"e2e:ui": "playwright test --ui",
-		"ralph-prd": "bun run ./scripts/ralph.ts --prompt-file ./docs/ralph.md"
+		"ralph-prd": "bun run ./scripts/ralph.ts --prompt-file ./docs/ralph.md",
+		"mail-sync": "bun run ./scripts/mail-sync/index.ts"
 	},
 	"dependencies": {
-		"@effect/platform": "^0.94.4",
-		"@effect/platform-bun": "^0.87.1",
-		"@effect/platform-node": "^0.104.1",
+		"@effect/platform-bun": "^4.0.0-beta.35",
+		"@effect/platform-node": "^4.0.0-beta.35",
 		"@solidjs/router": "^0.15.4",
 		"@solidjs/start": "^1.2.1",
 		"arkregex": "^0.0.5",
-		"effect": "^3.19.16",
+		"cheerio": "^1.2.0",
+		"effect": "^4.0.0-beta.35",
+		"googleapis": "^171.4.0",
+		"html-to-text": "^9.0.5",
 		"solid-js": "^1.9.11",
 		"vinxi": "^0.5.11"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.14",
-		"@effect/cli": "^0.73.2",
-		"@effect/language-service": "^0.73.1",
+		"@effect/language-service": "^0.80.0",
 		"@playwright/test": "^1.58.2",
 		"@tailwindcss/vite": "^4.1.18",
 		"@types/bun": "^1.3.9",
+		"@types/html-to-text": "^9.0.4",
 		"tailwindcss": "^4.1.18",
 		"typescript": "^5.9.3",
 		"vite": "^7.3.1"

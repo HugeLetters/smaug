@@ -4,9 +4,9 @@ import * as Fn from "effect/Function";
 export type EffectGen<
 	TEffect extends Effect.Effect<unknown, unknown, unknown>,
 > = Effect.fn.Return<
-	Effect.Effect.Success<TEffect>,
-	Effect.Effect.Error<TEffect>,
-	Effect.Effect.Context<TEffect>
+	Effect.Success<TEffect>,
+	Effect.Error<TEffect>,
+	Effect.Services<TEffect>
 >;
 
 export const flatMapError = Fn.dual<
@@ -21,6 +21,6 @@ export const flatMapError = Fn.dual<
 	) => Effect.Effect<A1, A2 | E2, R1 | R2>
 >(2, (self, map) => {
 	return self.pipe(
-		Effect.catchAll((err) => map(err).pipe(Effect.flatMap(Effect.fail))),
+		Effect.catch((err) => map(err).pipe(Effect.flatMap(Effect.fail))),
 	);
 });

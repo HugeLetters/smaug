@@ -4,22 +4,22 @@
 
 import * as BunTest from "bun:test";
 import { flow } from "effect";
-import * as Arbitrary from "effect/Arbitrary";
 import type * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as FastCheck from "effect/FastCheck";
 import * as Fn from "effect/Function";
 import * as Layer from "effect/Layer";
-import * as LoggerService from "effect/Logger";
+import * as Logger from "effect/Logger";
+import * as Num from "effect/Number";
 import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as TestContext from "effect/TestContext";
-import type * as TestServices from "effect/TestServices";
+import * as FastCheck from "effect/testing/FastCheck";
+import * as TestClock from "effect/testing/TestClock";
+import * as TestConsole from "effect/testing/TestConsole";
 import type { EffectGen } from "~/utils/effect";
 
 export namespace EffectBunTest {
@@ -35,7 +35,7 @@ export namespace EffectBunTest {
 		timeout?: BunTest.TestOptions | number,
 	) => void;
 
-	type Arbitrary = Schema.Schema.Any | FastCheck.Arbitrary<unknown>;
+	type Arbitrary = Schema.Any | FastCheck.Arbitrary<unknown>;
 	type ArbitraryType<TArb extends Arbitrary> =
 		TArb extends FastCheck.Arbitrary<infer T> ? T : Schema.Schema.Type<TArb>;
 
@@ -86,20 +86,18 @@ export namespace EffectBunTest {
 		 * Run Effect-based tests with test services environment.
 		 * Provides automatic error handling and test context.
 		 */
-		readonly effect: EffectBunTest.Tester<TestServices.TestServices | R>;
+		readonly effect: EffectBunTest.Tester<TestEnv | R>;
 		/**
 		 * Retry a test multiple times to handle flaky behavior.
 		 */
 		readonly flakyTest: <A, E, R2>(
 			self: Effect.Effect<A, E, R2>,
-			timeout?: Duration.DurationInput,
+			timeout?: Duration.Input,
 		) => Effect.Effect<A, never, R2>;
 		/**
 		 * Run Effect-based tests with scoped resources.
 		 */
-		readonly scoped: EffectBunTest.Tester<
-			TestServices.TestServices | Scope.Scope | R
-		>;
+		readonly scoped: EffectBunTest.Tester<TestEnv | Scope.Scope | R>;
 		/**
 		 * Share a `Layer` between multiple tests, optionally wrapping
 		 * the tests in a `describe` block if a name is provided.
@@ -143,7 +141,7 @@ export namespace EffectBunTest {
 		readonly layer: <R2, E>(
 			layer: Layer.Layer<R2, E, R>,
 			options?: {
-				readonly timeout?: Duration.DurationInput;
+				readonly timeout?: Duration.Input;
 			},
 		) => (
 			name: string,
@@ -193,11 +191,15 @@ function runTestPromise<E, A>(effect: Effect.Effect<A, E>) {
 			throw mainError;
 		};
 	})
-		.pipe(Effect.provide(LoggerService.pretty), Effect.runPromise)
+		.pipe(
+			Effect.provide(Logger.layer([Logger.consolePretty()])),
+			Effect.runPromise,
+		)
 		.then((f) => f());
 }
 
-const TestEnv = TestContext.TestContext;
+const TestEnv = Layer.mergeAll(TestConsole.layer, TestClock.layer());
+type TestEnv = Layer.Success<typeof TestEnv>;
 
 function makeTester<R>(
 	mapEffect: <A, E>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, never>,
@@ -241,7 +243,8 @@ function makeTester<R>(
 		const arbs = FastCheck.record(
 			Object.entries(arbitraries).reduce(
 				(result, [key, arb]) => {
-					const arbitrary = Schema.isSchema(arb) ? Arbitrary.make(arb) : arb;
+					const arbitrary =
+						arb instanceof FastCheck.Arbitrary ? arb : Schema.toArbitrary(arb);
 					result[key] = arbitrary;
 					return result;
 				},
@@ -276,7 +279,8 @@ const prop: EffectBunTest.Methods["prop"] = (
 	const arbs = FastCheck.record(
 		Object.entries(arbitraries).reduce(
 			(result, [key, arb]) => {
-				result[key] = Schema.isSchema(arb) ? Arbitrary.make(arb) : arb;
+				result[key] =
+					arb instanceof FastCheck.Arbitrary ? arb : Schema.toArbitrary(arb);
 				return result;
 			},
 			{} as Record<string, FastCheck.Arbitrary<unknown>>,
@@ -300,7 +304,7 @@ function layer<R, E>(
 	layer_: Layer.Layer<R, E>,
 	options?: {
 		readonly memoMap?: Layer.MemoMap;
-		readonly timeout?: Duration.DurationInput;
+		readonly timeout?: Duration.Input;
 	},
 ) {
 	return (
@@ -310,16 +314,15 @@ function layer<R, E>(
 		const withTestEnv = Layer.provideMerge(layer_, TestEnv);
 		const memoMap = options?.memoMap ?? Effect.runSync(Layer.makeMemoMap);
 		const scope = Effect.runSync(Scope.make());
-		const runtimeEffect = Layer.toRuntimeWithMemoMap(withTestEnv, memoMap).pipe(
-			Scope.extend(scope),
-			Effect.orDie,
-			Effect.cached,
-			Effect.runSync,
-		);
+		const runtimeEffect = Layer.buildWithMemoMap(
+			withTestEnv,
+			memoMap,
+			scope,
+		).pipe(Effect.orDie, Effect.cached, Effect.runSync);
 
 		function makeTest(test: BunTest.Test<[]>): EffectBunTest.MethodsNonLive<R> {
 			return Object.assign(test, {
-				effect: makeTester<TestServices.TestServices | R>(
+				effect: makeTester<TestEnv | R>(
 					(effect) =>
 						runtimeEffect.pipe(
 							Effect.flatMap((runtime) => effect.pipe(Effect.provide(runtime))),
@@ -327,7 +330,7 @@ function layer<R, E>(
 					test,
 				),
 				prop,
-				scoped: makeTester<TestServices.TestServices | Scope.Scope | R>(
+				scoped: makeTester<TestEnv | Scope.Scope | R>(
 					(effect) =>
 						runtimeEffect.pipe(
 							Effect.flatMap((runtime) =>
@@ -340,7 +343,7 @@ function layer<R, E>(
 				layer<R2, E2>(
 					nestedLayer: Layer.Layer<R2, E2, R>,
 					options?: {
-						readonly timeout?: Duration.DurationInput;
+						readonly timeout?: Duration.Input;
 					},
 				) {
 					return layer(Layer.provideMerge(nestedLayer, withTestEnv), {
@@ -361,14 +364,16 @@ function layer<R, E>(
 
 function flakyTest<A, E, R>(
 	self: Effect.Effect<A, E, R>,
-	timeout: Duration.DurationInput = Duration.seconds(30),
+	timeout: Duration.Input = Duration.seconds(30),
 ) {
+	const timeoutMs = Duration.toMillis(Duration.fromInputUnsafe(timeout));
 	return self.pipe(
-		Effect.catchAllDefect(Effect.fail),
+		Effect.catchDefect(Effect.fail),
 		Effect.retry(
 			Schedule.recurs(10).pipe(
-				Schedule.compose(Schedule.elapsed),
-				Schedule.whileOutput(Duration.lessThanOrEqualTo(timeout)),
+				Schedule.while((meta) =>
+					Num.isLessThanOrEqualTo(meta.elapsed, timeoutMs),
+				),
 			),
 		),
 		Effect.orDie,
@@ -377,11 +382,8 @@ function flakyTest<A, E, R>(
 
 function makeMethods(test: BunTest.Test<[]>): EffectBunTest.Methods {
 	return Object.assign(test, {
-		effect: makeTester<TestServices.TestServices>(
-			flow(Effect.provide(TestEnv)),
-			test,
-		),
-		scoped: makeTester<TestServices.TestServices | Scope.Scope>(
+		effect: makeTester<TestEnv>(flow(Effect.provide(TestEnv)), test),
+		scoped: makeTester<TestEnv | Scope.Scope>(
 			flow(Effect.scoped, Effect.provide(TestEnv)),
 			test,
 		),

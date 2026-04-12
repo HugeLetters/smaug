@@ -14,6 +14,7 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
 		"noImplicitOverride": true,
+		"verbatimModuleSyntax": true,
 
 		"types": ["vinxi/types/client"],
 		"isolatedModules": true,
@@ -36,7 +37,8 @@
 					"String": "Str",
 					"Function": "Fn",
 					"Number": "Num",
-					"BigInt": "BigInteger"
+					"BigInt": "BigInteger",
+					"RegExp": "RE"
 				}
 			}
 		]

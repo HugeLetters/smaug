@@ -1,11 +1,13 @@
 import { regex } from "arkregex";
 import * as Effect from "effect/Effect";
-import * as ParseResult from "effect/ParseResult";
+import * as Option from "effect/Option";
 import * as Record from "effect/Record";
 import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
+import * as SchemaIssue from "effect/SchemaIssue";
 import type * as Types from "effect/Types";
 
-const Shade = Schema.Literal(
+const Shade = Schema.Literals([
 	"50",
 	"100",
 	"200",
@@ -16,10 +18,10 @@ const Shade = Schema.Literal(
 	"700",
 	"800",
 	"900",
-);
+]);
 type Shade = typeof Shade.Type;
 
-const ShadeToColorMap = Schema.Record({ key: Shade, value: Schema.String });
+const ShadeToColorMap = Schema.Record(Shade, Schema.String);
 type ShadeToColorMap = typeof ShadeToColorMap.Type;
 
 type Token =
@@ -44,23 +46,28 @@ const OklchFromSelf = Schema.Struct({
 	h: Schema.Number,
 });
 
-const Oklch = Schema.transformOrFail(Schema.String, OklchFromSelf, {
-	decode: (s: string, _options, ast, _fromI) => {
-		const match = oklchRegex.exec(s);
-		if (!match) {
-			return Effect.fail(
-				new ParseResult.Forbidden(ast, s, "Invalid OKLCH format"),
-			);
-		}
-		return Effect.succeed({
-			l: parseFloat(match.groups.l),
-			c: parseFloat(match.groups.c),
-			h: parseFloat(match.groups.h),
-		});
-	},
-	encode: ({ l, c, h }, _toA) =>
-		Effect.succeed(`oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)})`),
-});
+const Oklch = Schema.String.pipe(
+	Schema.decodeTo(OklchFromSelf, {
+		decode: SchemaGetter.transformOrFail((s) => {
+			const match = oklchRegex.exec(s);
+			if (!match) {
+				return Effect.fail(
+					new SchemaIssue.InvalidValue(Option.some(s), {
+						message: "Invalid OKLCH format",
+					}),
+				);
+			}
+			return Effect.succeed({
+				l: parseFloat(match.groups.l),
+				c: parseFloat(match.groups.c),
+				h: parseFloat(match.groups.h),
+			});
+		}),
+		encode: SchemaGetter.transform(({ l, c, h }) => {
+			return `oklch(${l.toFixed(3)} ${c.toFixed(3)} ${h.toFixed(1)})`;
+		}),
+	}),
+);
 
 /**
  * Generate OKLCH shades from a base color, deriving L and C relative to base for all levels
@@ -72,7 +79,7 @@ const generateShades = Effect.fn(function* (baseOklch: string) {
 		l: baseL,
 		c: baseC,
 		h: baseH,
-	} = yield* Schema.decode(Oklch)(baseOklch);
+	} = yield* Schema.decodeEffect(Oklch)(baseOklch);
 
 	// Reference values for relative scaling (based on a mid-tone base at L=0.6, C=0.21)
 
@@ -110,14 +117,14 @@ const generateShades = Effect.fn(function* (baseOklch: string) {
 		const l = Math.max(0, Math.min(1, baseL + lightnessDeltas[shade]));
 		// Derive C from base, scale proportionally, ensure non-negative
 		const c = Math.max(0, baseC * chromaFactors[shade]);
-		shades[shade] = yield* Schema.encode(Oklch)({
+		shades[shade] = yield* Schema.encodeEffect(Oklch)({
 			l,
 			c,
 			h: baseH,
 		});
 	}
 
-	return yield* Schema.decodeUnknown(ShadeToColorMap)(shades);
+	return yield* Schema.decodeUnknownEffect(ShadeToColorMap)(shades);
 });
 
 const generatePalette = Effect.fn(function* (baseColors: BasePalette) {
@@ -164,5 +171,5 @@ export const Presets = Effect.gen(function* () {
 	return palette;
 });
 
-export type PresetMap = Effect.Effect.Success<typeof Presets>;
+export type PresetMap = Effect.Success<typeof Presets>;
 export type Preset = keyof PresetMap;

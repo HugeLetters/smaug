@@ -1,0 +1,3 @@
+[submodule "mail-sync/account.config"]
+	path = ./scripts/mail-sync/account.config
+	url = ./scripts/mail-sync/account.config
