@@ -89,7 +89,6 @@ function resolveAccountsQuery(accounts: ReadonlyArray<Account>) {
 	);
 }
 
-// TODO gmail-sync | some locking mechanism to prevent double-counting | by Evgenii Perminov at Mon, 09 Mar 2026 21:06:50 GMT
 const processMail = Effect.fn("processMail")(function* (
 	accounts: ReadonlyArray<Account>,
 	email: Google.Gmail.Email,
