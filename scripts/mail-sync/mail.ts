@@ -126,7 +126,10 @@ const processMail = Effect.fn("processMail")(function* (
 									yield* Effect.logError(
 										`Failed to parse email ${email.id}`,
 										`Snippet: ${formatSnippet(email.snippet)}`,
-										error.failures.map((failure) => failure.error),
+										error.failures.map(
+											({ error, meta }) =>
+												`${meta.accountId}:${meta.parserId}: ${error.message}`,
+										),
 									);
 									break;
 								case "SheetsWriteError":
