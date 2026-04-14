@@ -160,7 +160,10 @@ const saveTransaction = Effect.fn("save-transaction")(function* (
 	const getValue = (column: (typeof config.sheet.columns)[number]) => {
 		switch (column) {
 			case "date":
-				return DateTime.formatIsoDateUtc(transaction.date);
+				return transaction.date.pipe(
+					DateTime.setZone(DateTime.zoneMakeLocal()),
+					DateTime.formatIsoDate,
+				);
 			case "by":
 				return transaction.by.accountId;
 			case "amount":
