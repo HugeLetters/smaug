@@ -121,8 +121,19 @@ const MainLive = Layer.mergeAll(
 	GmailLive,
 	SheetsLive,
 	Logger.layer([
-		Logger.consolePretty({ colors: true, mode: "tty", stderr: true }),
+		Logger.consolePretty({
+			colors: true,
+			mode: "tty",
+			stderr: true,
+			formatDate(date) {
+				return `${padNumber(date.getDate())}.${padNumber(date.getMonth() + 1)} ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}.${padNumber(date.getMilliseconds(), 3)}`;
+			},
+		}),
 	]),
 ).pipe(Layer.provideMerge(ConfigLive));
 
 program.pipe(Effect.provide(MainLive), BunRuntime.runMain({}));
+
+function padNumber(n: number, d = 2) {
+	return String(n).padStart(d, "0");
+}
