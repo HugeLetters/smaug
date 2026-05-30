@@ -127,6 +127,7 @@ interface BaseRowWriteOptions {
 	readonly spreadsheetId: string;
 	readonly sheetName: string;
 	readonly startColumn?: string;
+	readonly endColumn?: string;
 	readonly valueInputOption?: ValueInputOptions;
 }
 interface AppendRowOptions extends BaseRowWriteOptions {
@@ -140,14 +141,12 @@ export const appendRow = Effect.fn("sheets.appendRow")(function* (
 	const {
 		valueInputOption = ValueInputOptions.userEntered,
 		startColumn = "A",
+		endColumn = indexToColumn(columnToIndex(startColumn) + values.length - 1),
 		insertDataOption = InsertDataOption.insert,
 	} = options;
 
 	const sheets = yield* SheetsClient;
 
-	const endColumn = indexToColumn(
-		columnToIndex(startColumn) + values.length - 1,
-	);
 	const range = makeRange({
 		sheetName: options.sheetName,
 		startColumn: startColumn,
