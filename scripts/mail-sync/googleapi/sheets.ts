@@ -80,13 +80,25 @@ export enum ValueInputOptions {
 	userEntered = "USER_ENTERED",
 }
 
-export const readRow = Effect.fn("sheets.readRow")(function* (options: {
+export enum Dimension {
+	rows = "ROWS",
+	columns = "COLUMNS",
+}
+
+interface ReadOptions {
 	readonly spreadsheetId: string;
 	readonly sheetName: string;
-	readonly row: number;
 	readonly startColumn?: string;
 	readonly endColumn?: string;
-}) {
+}
+interface ReadRangeOptions extends ReadOptions {
+	readonly startRow: number;
+	readonly endRow: number;
+}
+
+export const readRange = Effect.fn("sheets.readRange")(function* (
+	options: ReadRangeOptions,
+) {
 	const sheets = yield* SheetsClient;
 	const startColumn = options.startColumn ?? "A";
 	const endColumn = options.endColumn ?? startColumn;
@@ -95,8 +107,8 @@ export const readRow = Effect.fn("sheets.readRow")(function* (options: {
 		sheetName: options.sheetName,
 		startColumn,
 		endColumn,
-		startRow: options.row,
-		endRow: options.row,
+		startRow: options.startRow,
+		endRow: options.endRow,
 	});
 
 	const response = yield* sheets
@@ -109,14 +121,24 @@ export const readRow = Effect.fn("sheets.readRow")(function* (options: {
 		)
 		.pipe(Effect.retry(RetrySchedule));
 
-	const out: Array<CellValue> = response.data.values?.[0] ?? [];
+	const out: Array<Array<CellValue>> = response.data.values ?? [];
 	return out;
 });
 
-enum Dimension {
-	rows = "ROWS",
-	columns = "COLUMNS",
+interface ReadRowOptions extends ReadOptions {
+	readonly row: number;
 }
+
+export const readRow = Effect.fn("sheets.readRow")(function* (
+	options: ReadRowOptions,
+) {
+	const [values] = yield* readRange({
+		...options,
+		startRow: options.row,
+		endRow: options.row,
+	});
+	return values ?? [];
+});
 
 export enum InsertDataOption {
 	overwrite = "OVERWRITE",
