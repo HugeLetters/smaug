@@ -1,4 +1,4 @@
-import { pipe } from "effect";
+import { flow, pipe } from "effect";
 import * as Arr from "effect/Array";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
@@ -7,10 +7,12 @@ import * as Iterable from "effect/Iterable";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
 import * as ServiceMap from "effect/ServiceMap";
 import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import type { sheets_v4 } from "googleapis";
 import { google } from "googleapis";
+import { Google } from ".";
 import { OauthClient } from "./oauth";
 
 export class SheetsClient extends ServiceMap.Service<SheetsClient>()(
@@ -73,6 +75,172 @@ export class SheetsClient extends ServiceMap.Service<SheetsClient>()(
 	static live = Layer.effect(SheetsClient, SheetsClient.make);
 }
 
+interface SheetsOptions {
+	readonly spreadsheetId: string;
+	readonly sheetName: string;
+}
+
+export class AppendRow extends ServiceMap.Service<AppendRow>()(
+	"smaug/googleapi/sheets/AppendRow",
+	{
+		make: Effect.fn(function* (initialBaseline: number) {
+			const spread = 5;
+			const baselineMap = new Map<string, number>();
+			const sheets = yield* Google.Sheets.SheetsClient;
+			const semaphore = yield* Semaphore.make(1);
+
+			function getFirstEmptyInRange(
+				rows: ReadonlyArray<ReadonlyArray<CellValue>>,
+				startRow: number,
+				expectedCount: number,
+			) {
+				if (rows.length < expectedCount) {
+					return startRow + rows.length;
+				}
+
+				return null;
+			}
+
+			interface FindEmptyRowOptions extends SheetsOptions {
+				readonly startColumn?: string;
+				readonly endColumn?: string;
+			}
+			/**
+			 * This function assumes sheet table is continous - we could travers the whole table from the start to find the actual first empty row but that would be terribly inefficient. So this is a nice tradeoff imo
+			 */
+			const findNextEmptyRow = Effect.fn("appendRow.findNextEmptyRow")(
+				function* ({
+					spreadsheetId,
+					sheetName,
+					startColumn = "A",
+					endColumn = startColumn,
+				}: FindEmptyRowOptions) {
+					/** Lowest possible guess */
+					let lower = 1;
+					/** Larget possible guess */
+					let upper: number | null = null;
+
+					const key = `${spreadsheetId}:${sheetName}:${startColumn}:${endColumn}`;
+					let baseline = Math.max(
+						lower,
+						baselineMap.get(key) ?? initialBaseline,
+					);
+
+					function updateBaseline(value: number) {
+						baseline = value;
+						baselineMap.set(key, value);
+					}
+
+					while (true) {
+						const startRow = Math.max(baseline - spread, lower);
+						const endRow = Math.min(
+							baseline + spread,
+							upper ?? Number.POSITIVE_INFINITY,
+						);
+
+						if (startRow === endRow) {
+							updateBaseline(startRow);
+							return startRow;
+						}
+
+						const rows = yield* readRange({
+							spreadsheetId,
+							sheetName,
+							startRow,
+							endRow,
+							startColumn,
+							endColumn,
+						});
+
+						const firstEmpty = getFirstEmptyInRange(
+							rows,
+							startRow,
+							endRow - startRow + 1,
+						);
+
+						if (firstEmpty === null) {
+							lower = endRow + 1;
+							updateBaseline(
+								upper === null ? lower * 2 : Math.floor((lower + upper) / 2),
+							);
+							continue;
+						}
+
+						if (firstEmpty !== startRow) {
+							updateBaseline(firstEmpty);
+							return firstEmpty;
+						}
+
+						upper = firstEmpty;
+						updateBaseline(Math.floor((lower + upper) / 2));
+					}
+				},
+			);
+
+			const append = Effect.fn("appendRow.append")(
+				function* (
+					values: ReadonlyArray<CellValue>,
+					options: AppendRowOptions,
+				) {
+					const {
+						valueInputOption = ValueInputOptions.userEntered,
+						startColumn = "A",
+						endColumn = indexToColumn(
+							columnToIndex(startColumn) + values.length - 1,
+						),
+						insertDataOption = InsertDataOption.insert,
+					} = options;
+
+					const row = yield* findNextEmptyRow({
+						spreadsheetId: options.spreadsheetId,
+						sheetName: options.sheetName,
+						startColumn,
+						endColumn,
+					});
+
+					const range = makeRange({
+						sheetName: options.sheetName,
+						startColumn: startColumn,
+						endColumn,
+						startRow: row,
+						endRow: row,
+					});
+
+					yield* sheets
+						.useWrite((client) => {
+							return client.spreadsheets.values.append({
+								spreadsheetId: options.spreadsheetId,
+								range,
+								requestBody: {
+									values: [Array.from(values)],
+								},
+								valueInputOption,
+								insertDataOption,
+							});
+						})
+						.pipe(
+							Effect.retry(RetrySchedule),
+							Effect.catchTag("SheetsError", (err) =>
+								SheetsWriteError.fail(
+									`Failed to append row '${values.join(", ")}' at '${range}'`,
+									err,
+								),
+							),
+						);
+				},
+				semaphore.withPermits(1),
+				Effect.provideService(Google.Sheets.SheetsClient, sheets),
+			);
+
+			return {
+				append,
+			};
+		}),
+	},
+) {
+	static live = flow(AppendRow.make, Layer.effect(AppendRow));
+}
+
 export type CellValue = string | number | boolean | null;
 
 export enum ValueInputOptions {
@@ -85,9 +253,7 @@ export enum Dimension {
 	columns = "COLUMNS",
 }
 
-interface ReadOptions {
-	readonly spreadsheetId: string;
-	readonly sheetName: string;
+interface ReadOptions extends SheetsOptions {
 	readonly startColumn?: string;
 	readonly endColumn?: string;
 }
@@ -145,14 +311,12 @@ export enum InsertDataOption {
 	insert = "INSERT_ROWS",
 }
 
-interface BaseRowWriteOptions {
-	readonly spreadsheetId: string;
-	readonly sheetName: string;
+interface WriteOptions extends SheetsOptions {
 	readonly startColumn?: string;
 	readonly endColumn?: string;
 	readonly valueInputOption?: ValueInputOptions;
 }
-interface AppendRowOptions extends BaseRowWriteOptions {
+interface AppendRowOptions extends WriteOptions {
 	insertDataOption?: InsertDataOption;
 }
 
@@ -160,47 +324,11 @@ export const appendRow = Effect.fn("sheets.appendRow")(function* (
 	values: ReadonlyArray<CellValue>,
 	options: AppendRowOptions,
 ) {
-	const {
-		valueInputOption = ValueInputOptions.userEntered,
-		startColumn = "A",
-		endColumn = indexToColumn(columnToIndex(startColumn) + values.length - 1),
-		insertDataOption = InsertDataOption.insert,
-	} = options;
-
-	const sheets = yield* SheetsClient;
-
-	const range = makeRange({
-		sheetName: options.sheetName,
-		startColumn: startColumn,
-		endColumn,
-		startRow: 1,
-		endRow: 1,
-	});
-
-	yield* sheets
-		.useWrite((client) => {
-			return client.spreadsheets.values.append({
-				spreadsheetId: options.spreadsheetId,
-				range,
-				requestBody: {
-					values: [Array.from(values)],
-				},
-				valueInputOption,
-				insertDataOption,
-			});
-		})
-		.pipe(
-			Effect.retry(RetrySchedule),
-			Effect.catchTag("SheetsError", (err) =>
-				SheetsWriteError.fail(
-					`Failed to append row '${values.join(", ")}' at '${range}'`,
-					err,
-				),
-			),
-		);
+	const appender = yield* AppendRow;
+	yield* appender.append(values, options);
 });
 
-export interface WriteRowOptions extends BaseRowWriteOptions {
+export interface WriteRowOptions extends WriteOptions {
 	readonly row: number;
 }
 

@@ -103,6 +103,10 @@ const SheetsLive = Google.Sheets.SheetsClient.live.pipe(
 	Layer.provide([OauthLive, RateLimiterLive]),
 );
 
+const FirstEmptyRowLive = Google.Sheets.AppendRow.live(500).pipe(
+	Layer.provide(SheetsLive),
+);
+
 const ConfigLive = Effect.gen(function* () {
 	const path = yield* Path.Path;
 
@@ -120,6 +124,7 @@ const MainLive = Layer.mergeAll(
 	OauthLive,
 	GmailLive,
 	SheetsLive,
+	FirstEmptyRowLive,
 	Logger.layer([
 		Logger.consolePretty({
 			colors: true,

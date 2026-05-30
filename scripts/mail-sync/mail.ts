@@ -119,6 +119,7 @@ const processMail = Effect.fn("processMail")(function* (
 							}),
 						);
 					case "ParserFailureList":
+					case "SheetsError":
 					case "SheetsWriteError": {
 						return Effect.gen(function* () {
 							switch (error._tag) {
@@ -133,6 +134,7 @@ const processMail = Effect.fn("processMail")(function* (
 									);
 									break;
 								case "SheetsWriteError":
+								case "SheetsError":
 									yield* Effect.logError(
 										`Failed to save email ${email.id}`,
 										`Snippet: ${formatSnippet(email.snippet)}`,
