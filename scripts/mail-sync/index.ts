@@ -7,7 +7,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
+import * as Stream from "effect/Stream";
+import * as Terminal from "effect/Terminal";
 import * as Command from "effect/unstable/cli/Command";
 import * as Flag from "effect/unstable/cli/Flag";
 import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
@@ -21,6 +25,7 @@ import { Google } from "./googleapi";
 import { processMailBatch } from "./mail";
 
 const sync = Effect.fn(function* (batchSize: number) {
+	yield* Effect.log("Processing start");
 	yield* SetupAuth.pipe(
 		Effect.retry(
 			Schedule.exponential("1 second").pipe((s) =>
@@ -35,7 +40,56 @@ const sync = Effect.fn(function* (batchSize: number) {
 	);
 
 	yield* processMailBatch(Accounts, batchSize);
-	yield* Effect.log("Batch processing finished");
+	yield* Effect.log("Processing done");
+});
+
+const runInteractiveMode = Effect.fn(function* (batchSize: number) {
+	const terminal = yield* Terminal.Terminal;
+	const input = yield* terminal.readInput;
+	const wake = yield* Queue.make<"cron" | "manual">();
+	const pendingManual = yield* Ref.make(false);
+
+	const manual = Stream.fromQueue(input).pipe(
+		Stream.filter((event) => event.key.name.toLowerCase() === "r"),
+		Stream.runForEach(
+			Effect.fnUntraced(function* () {
+				const wasPending = yield* Ref.getAndSet(pendingManual, true);
+				if (wasPending) {
+					yield* Effect.log("Manual sync is already registered");
+					return;
+				}
+
+				yield* Queue.offer(wake, "manual");
+				yield* Effect.log("Manual sync registered");
+			}),
+		),
+	);
+
+	const schedule = Cron.make({
+		minutes: [0],
+		hours: [9],
+		days: [],
+		months: [],
+		weekdays: [],
+	});
+
+	const cron = Stream.fromSchedule(Schedule.cron(schedule)).pipe(
+		Stream.runForEach(() => Queue.offer(wake, "cron")),
+	);
+
+	const worker = Stream.fromQueue(wake).pipe(
+		Stream.runForEach((trigger) => {
+			return sync(batchSize).pipe(
+				Effect.catch(Effect.logFatal),
+				Effect.satisfiesErrorType<never>(),
+				Effect.ensuring(
+					trigger === "manual" ? Ref.set(pendingManual, false) : Effect.void,
+				),
+			);
+		}),
+	);
+
+	yield* Effect.all([manual, cron, worker], { concurrency: "unbounded" });
 });
 
 const GmailSyncCommand = Command.make(
@@ -54,23 +108,9 @@ const GmailSyncCommand = Command.make(
 		),
 	},
 	Effect.fn(function* ({ runOnce, batchSize }) {
-		let task = sync(batchSize);
-
-		if (!runOnce) {
-			const schedule = Cron.make({
-				minutes: [0],
-				hours: [9],
-				days: [],
-				months: [],
-				weekdays: [],
-			});
-
-			task = task.pipe(
-				Effect.repeat(Schedule.cron(schedule)),
-				Effect.catch(Effect.logFatal),
-				Effect.satisfiesErrorType<never>(),
-			);
-		}
+		const task = runOnce
+			? sync(batchSize)
+			: runInteractiveMode(batchSize).pipe(Effect.scoped);
 
 		yield* task;
 	}),
