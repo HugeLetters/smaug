@@ -89,6 +89,7 @@ const runInteractiveMode = Effect.fn(function* (batchSize: number) {
 		}),
 	);
 
+	yield* Queue.offer(wake, "cron");
 	yield* Effect.all([manual, cron, worker], { concurrency: "unbounded" });
 });
 
