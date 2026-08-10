@@ -26,6 +26,7 @@ import { processMailBatch } from "./mail";
 
 const sync = Effect.fn(function* (batchSize: number) {
 	yield* Effect.log("Processing start");
+
 	yield* SetupAuth.pipe(
 		Effect.retry(
 			Schedule.exponential("1 second").pipe((s) =>
@@ -40,16 +41,30 @@ const sync = Effect.fn(function* (batchSize: number) {
 	);
 
 	yield* processMailBatch(Accounts, batchSize);
+
 	yield* Effect.log("Processing done");
+}, Effect.uninterruptible);
+
+/** Inerrupts on `ctrl-c/ctrl-d`; succeeds if the tty ends */
+const TerminalInputQuit = Effect.gen(function* () {
+	const terminal = yield* Terminal.Terminal;
+	const lifecycle = yield* terminal.readInput;
+
+	yield* Stream.fromQueue(lifecycle).pipe(
+		Stream.filter(
+			({ key }) => key.ctrl && (key.name === "c" || key.name === "d"),
+		),
+		Stream.runForEach(() => Effect.interrupt),
+	);
 });
 
 const runInteractiveMode = Effect.fn(function* (batchSize: number) {
 	const terminal = yield* Terminal.Terminal;
+
 	const input = yield* terminal.readInput;
 	const wake = yield* Queue.make<"cron" | "manual">();
 	const pendingManual = yield* Ref.make(false);
-
-	const manual = Stream.fromQueue(input).pipe(
+	const ManualQueueWorker = Stream.fromQueue(input).pipe(
 		Stream.filter((event) => event.key.name.toLowerCase() === "r"),
 		Stream.runForEach(
 			Effect.fnUntraced(function* () {
@@ -72,12 +87,11 @@ const runInteractiveMode = Effect.fn(function* (batchSize: number) {
 		months: [],
 		weekdays: [],
 	});
-
-	const cron = Stream.fromSchedule(Schedule.cron(schedule)).pipe(
+	const CronQueueWorker = Stream.fromSchedule(Schedule.cron(schedule)).pipe(
 		Stream.runForEach(() => Queue.offer(wake, "cron")),
 	);
 
-	const worker = Stream.fromQueue(wake).pipe(
+	const SyncWorker = Stream.fromQueue(wake).pipe(
 		Stream.runForEach((trigger) => {
 			return sync(batchSize).pipe(
 				Effect.catch(Effect.logFatal),
@@ -89,8 +103,15 @@ const runInteractiveMode = Effect.fn(function* (batchSize: number) {
 		}),
 	);
 
+	const Worker = Effect.all([ManualQueueWorker, CronQueueWorker, SyncWorker], {
+		concurrency: "unbounded",
+	});
+
 	yield* Queue.offer(wake, "cron");
-	yield* Effect.all([manual, cron, worker], { concurrency: "unbounded" });
+	yield* Effect.raceFirst(
+		TerminalInputQuit.pipe(Effect.andThen(Effect.never)),
+		Worker,
+	);
 });
 
 const GmailSyncCommand = Command.make(
@@ -109,11 +130,12 @@ const GmailSyncCommand = Command.make(
 		),
 	},
 	Effect.fn(function* ({ runOnce, batchSize }) {
-		const task = runOnce
-			? sync(batchSize)
-			: runInteractiveMode(batchSize).pipe(Effect.scoped);
+		if (runOnce) {
+			yield* sync(batchSize);
+			return;
+		}
 
-		yield* task;
+		yield* runInteractiveMode(batchSize);
 	}),
 ).pipe(Command.withDescription("Sync Gmail transaction emails to Google Docs"));
 
@@ -178,7 +200,7 @@ const MainLive = Layer.mergeAll(
 	]),
 ).pipe(Layer.provideMerge(ConfigLive));
 
-program.pipe(Effect.provide(MainLive), BunRuntime.runMain({}));
+program.pipe(Effect.scoped, Effect.provide(MainLive), BunRuntime.runMain({}));
 
 function padNumber(n: number, d = 2) {
 	return String(n).padStart(d, "0");
