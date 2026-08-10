@@ -238,7 +238,7 @@ const getOauth2Payload = Effect.fn(function* (
 	const payload = yield* Deferred.await(payloadDeferred).pipe(
 		Effect.timeoutOrElse({
 			duration: waitingDuration,
-			onTimeout() {
+			orElse() {
 				return AuthError.fail("Timed out waiting for OAuth callback");
 			},
 		}),

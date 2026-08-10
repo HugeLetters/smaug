@@ -1,16 +1,16 @@
 import { flow } from "effect";
+import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import * as ServiceMap from "effect/ServiceMap";
 
 export class SecretsError extends Data.TaggedError("SecretsError")<{
 	readonly message: string;
 	readonly cause?: unknown;
 }> {}
 
-export class Secrets extends ServiceMap.Service<Secrets>()("smaug/Secrets", {
+export class Secrets extends Context.Service<Secrets>()("smaug/Secrets", {
 	make: Effect.fn(function* (domain: string = "finance-app") {
 		const service = `smaug/${domain}`;
 

@@ -1,8 +1,8 @@
 import * as Config from "effect/Config";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as ServiceMap from "effect/ServiceMap";
 import { dateTimeConfig } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 
@@ -67,7 +67,7 @@ const MailConfig = Effect.gen(function* () {
 	}).pipe(Config.nested("mail"));
 });
 
-export class AppConfig extends ServiceMap.Service<AppConfig>()(
+export class AppConfig extends Context.Service<AppConfig>()(
 	"smaug/scripts/mail-sync/config/AppConfig",
 	{
 		make: Effect.gen(function* () {

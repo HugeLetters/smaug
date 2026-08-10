@@ -1,6 +1,5 @@
 import { regex } from "arkregex";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Record from "effect/Record";
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
@@ -52,9 +51,7 @@ const Oklch = Schema.String.pipe(
 			const match = oklchRegex.exec(s);
 			if (!match) {
 				return Effect.fail(
-					new SchemaIssue.InvalidValue(Option.some(s), {
-						message: "Invalid OKLCH format",
-					}),
+					new SchemaIssue.InvalidValue({ message: "Invalid OKLCH format" }, s),
 				);
 			}
 			return Effect.succeed({

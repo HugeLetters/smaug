@@ -244,7 +244,9 @@ function makeTester<R>(
 			Object.entries(arbitraries).reduce(
 				(result, [key, arb]) => {
 					const arbitrary =
-						arb instanceof FastCheck.Arbitrary ? arb : Schema.toArbitrary(arb);
+						arb instanceof FastCheck.Arbitrary
+							? arb
+							: Schema.toArbitrary(arb)(FastCheck);
 					result[key] = arbitrary;
 					return result;
 				},
@@ -280,7 +282,9 @@ const prop: EffectBunTest.Methods["prop"] = (
 		Object.entries(arbitraries).reduce(
 			(result, [key, arb]) => {
 				result[key] =
-					arb instanceof FastCheck.Arbitrary ? arb : Schema.toArbitrary(arb);
+					arb instanceof FastCheck.Arbitrary
+						? arb
+						: Schema.toArbitrary(arb)(FastCheck);
 				return result;
 			},
 			{} as Record<string, FastCheck.Arbitrary<unknown>>,

@@ -1,5 +1,6 @@
 import { pipe } from "effect";
 import * as Arr from "effect/Array";
+import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -9,7 +10,6 @@ import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
-import * as ServiceMap from "effect/ServiceMap";
 import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
@@ -19,7 +19,7 @@ export class GmailError extends Data.TaggedError("GmailError")<{
 	cause: unknown;
 }> {}
 
-export class GmailClient extends ServiceMap.Service<GmailClient>()(
+export class GmailClient extends Context.Service<GmailClient>()(
 	"smaug/googleapi/gmail/GmailClient",
 	{
 		make: Effect.gen(function* () {
@@ -439,7 +439,7 @@ function decodeBase64(base64: string) {
 
 export const ME = "me";
 
-const RetrySchedule = Duration.seconds(1).pipe(
-	Schedule.exponential,
-	Schedule.both(Schedule.recurs(5)),
-);
+const RetrySchedule = Schedule.max([
+	Schedule.exponential(Duration.seconds(1)),
+	Schedule.recurs(5),
+]);

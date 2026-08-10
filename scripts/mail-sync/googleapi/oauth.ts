@@ -1,16 +1,16 @@
 import { flow } from "effect";
+import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import * as ServiceMap from "effect/ServiceMap";
 import { type Auth, google } from "googleapis";
 
 export class OauthError extends Data.TaggedError("OauthError")<{
 	cause: unknown;
 }> {}
 
-export class OauthClient extends ServiceMap.Service<OauthClient>()(
+export class OauthClient extends Context.Service<OauthClient>()(
 	"smaug/googleapi/oauth/OauthClient",
 	{
 		make: Effect.fn(function* (

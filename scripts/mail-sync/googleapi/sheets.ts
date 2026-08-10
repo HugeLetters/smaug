@@ -1,5 +1,6 @@
 import { flow, pipe } from "effect";
 import * as Arr from "effect/Array";
+import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -8,14 +9,13 @@ import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
-import * as ServiceMap from "effect/ServiceMap";
 import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import type { sheets_v4 } from "googleapis";
 import { google } from "googleapis";
 import { Google } from ".";
 import { OauthClient } from "./oauth";
 
-export class SheetsClient extends ServiceMap.Service<SheetsClient>()(
+export class SheetsClient extends Context.Service<SheetsClient>()(
 	"smaug/googleapi/sheets/SheetsClient",
 	{
 		make: Effect.gen(function* () {
@@ -80,7 +80,7 @@ interface SheetsOptions {
 	readonly sheetName: string;
 }
 
-export class AppendRow extends ServiceMap.Service<AppendRow>()(
+export class AppendRow extends Context.Service<AppendRow>()(
 	"smaug/googleapi/sheets/AppendRow",
 	{
 		make: Effect.fn(function* (initialBaseline: number) {
@@ -472,10 +472,12 @@ export class SheetsWriteError extends Data.TaggedError("SheetsWriteError")<{
 	}
 }
 
-const RetrySchedule = Schedule.exponential(Duration.seconds(1)).pipe(
+const RetrySchedule = Schedule.max([
+	Schedule.exponential(Duration.seconds(1)),
+	Schedule.recurs(5),
+]).pipe(
 	Schedule.jittered,
-	Schedule.both(Schedule.recurs(5)),
-	Schedule.tapInput((input) =>
+	Schedule.tap(({ input }) =>
 		Effect.logWarning(`Retrying Google Sheets request`, input),
 	),
 );

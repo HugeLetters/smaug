@@ -1,4 +1,5 @@
 import { pipe } from "effect";
+import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -7,7 +8,6 @@ import * as Iterable from "effect/Iterable";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
-import * as ServiceMap from "effect/ServiceMap";
 import {
 	type Account,
 	parseTransactionFromEmail,
@@ -17,7 +17,7 @@ import { AppConfig } from "./config";
 import { Google } from "./googleapi";
 import type { Gmail } from "./googleapi/index.export";
 
-class LabelConfig extends ServiceMap.Service<LabelConfig>()(
+class LabelConfig extends Context.Service<LabelConfig>()(
 	"smaug/scripts/mail-sync/mail/LabelConfig",
 	{
 		make: Effect.gen(function* () {
@@ -324,10 +324,10 @@ export class MailError extends Data.TaggedError("MailError")<{
 	}
 }
 
-const RetrySchedule = pipe(
+const RetrySchedule = Schedule.max([
 	Schedule.exponential(Duration.seconds(1)),
-	Schedule.both(Schedule.recurs(5)),
-);
+	Schedule.recurs(5),
+]);
 
 function formatSnippet(snippet: string) {
 	const trimmed = snippet.replace(/\s+/g, " ").trim();
