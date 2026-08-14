@@ -15,13 +15,13 @@
 		"mail-sync": "bun run ./scripts/mail-sync/index.ts"
 	},
 	"dependencies": {
-		"@effect/platform-bun": "^4.0.0-beta.107",
-		"@effect/platform-node": "^4.0.0-beta.107",
+		"@effect/platform-bun": "^4.0.0-rc.109",
+		"@effect/platform-node": "^4.0.0-rc.109",
 		"@solidjs/router": "^0.15.4",
 		"@solidjs/start": "^1.2.1",
 		"arkregex": "^0.0.5",
 		"cheerio": "^1.2.0",
-		"effect": "^4.0.0-beta.107",
+		"effect": "^4.0.0-rc.109",
 		"googleapis": "^171.4.0",
 		"html-to-text": "^9.0.5",
 		"solid-js": "^1.9.11",
