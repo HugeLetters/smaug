@@ -14,7 +14,7 @@ const OauthConfig = Effect.gen(function* () {
 	}).pipe(Config.nested("oauth"));
 
 	// OAuth client secret stored in Bun.secrets
-	const clientSecret = yield* Effect.service(Secrets).pipe(
+	const clientSecret = yield* Secrets.pipe(
 		Effect.flatMap((s) => s.getOrFail("google_client_secret")),
 	);
 

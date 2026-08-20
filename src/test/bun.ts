@@ -20,14 +20,13 @@ import * as Scope from "effect/Scope";
 import * as FastCheck from "effect/testing/FastCheck";
 import * as TestClock from "effect/testing/TestClock";
 import * as TestConsole from "effect/testing/TestConsole";
-import type { EffectGen } from "~/utils/effect";
 
 export namespace EffectBunTest {
 	type API = BunTest.Test<[]>;
 
 	export type TestFunction<A, E, R, TestArgs extends Array<unknown>> = (
 		...args: TestArgs
-	) => Effect.Effect<A, E, R> | EffectGen<Effect.Effect<A, E, R>>;
+	) => Effect.Effect<A, E, R> | Effect.fn.Return<A, E, R>;
 
 	export type Test<R> = <A, E>(
 		name: string,
