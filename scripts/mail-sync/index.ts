@@ -107,7 +107,6 @@ const runInteractiveMode = Effect.fn(function* (batchSize: number) {
 		concurrency: "unbounded",
 	});
 
-	yield* Queue.offer(wake, "cron");
 	yield* Effect.raceFirst(
 		TerminalInputQuit.pipe(Effect.andThen(Effect.never)),
 		Worker,
