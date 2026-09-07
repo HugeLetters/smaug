@@ -17,7 +17,6 @@ import * as Flag from "effect/unstable/cli/Flag";
 import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
-import { Schedule$ } from "~/utils/schedule";
 import { Accounts } from "./account.config";
 import { SetupAuth } from "./auth";
 import { AppConfig } from "./config";
@@ -27,14 +26,13 @@ import { processMailBatch } from "./mail";
 const sync = Effect.fn(function* (batchSize: number) {
 	yield* Effect.log("Processing start");
 
-	yield* SetupAuth.pipe(
-		Effect.retry(
-			Schedule.exponential("1 second").pipe((s) =>
-				Schedule$.tap(s, (err, duration) =>
-					Effect.logWarning(
-						`Authentication failed. Retrying in ${Duration.format(duration)}`,
-						err,
-					),
+	yield* Effect.retry(
+		SetupAuth,
+		Schedule.exponential("1 second").pipe(
+			Schedule.tap((meta) =>
+				Effect.logWarning(
+					`Authentication failed. Retrying in ${Duration.format(meta.output)}`,
+					meta.input,
 				),
 			),
 		),

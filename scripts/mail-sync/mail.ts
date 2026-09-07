@@ -217,25 +217,25 @@ const ensureLabel = Effect.fn(function* (label: Label) {
 			foundColor?.backgroundColor !== label.bg ||
 			foundColor?.textColor !== label.text;
 
-		if (hasConfigMismatch) {
-			yield* Effect.log(`Syncing label ${label.name} config`);
-			yield* gmail
-				.use((client) =>
-					client.users.labels.patch({
-						userId: Google.Gmail.ME,
-						id: foundId,
-						requestBody: {
-							color: {
-								backgroundColor: label.bg,
-								textColor: label.text,
-							},
-						},
-					}),
-				)
-				.pipe(Effect.retry(RetrySchedule));
+		if (!hasConfigMismatch) {
+			return foundId;
 		}
 
-		return foundId;
+		yield* Effect.log(`Syncing label ${label.name} config`);
+		yield* gmail
+			.use((client) =>
+				client.users.labels.patch({
+					userId: Google.Gmail.ME,
+					id: foundId,
+					requestBody: {
+						color: {
+							backgroundColor: label.bg,
+							textColor: label.text,
+						},
+					},
+				}),
+			)
+			.pipe(Effect.retry(RetrySchedule));
 	}
 
 	const createdLabel = yield* gmail

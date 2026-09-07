@@ -252,7 +252,7 @@ export class AuthError extends Data.TaggedError("AuthError")<{
 	cause?: unknown;
 }> {
 	static fail(message: string, cause?: unknown) {
-		return Effect.fail(new AuthError({ message, cause }));
+		return new AuthError({ message, cause });
 	}
 }
 
