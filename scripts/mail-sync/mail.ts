@@ -96,7 +96,7 @@ const processMail = Effect.fn("processMail")(function* (
 ) {
 	const config = yield* LabelConfig;
 	yield* parseTransactionFromEmail(accounts, email).pipe(
-		Effect.tap((transaction) => saveTransaction(transaction)),
+		Effect.tap(saveTransaction),
 		Effect.matchEffect({
 			onSuccess(transaction) {
 				return applyLabel(email.id, config.label.processed).pipe(
@@ -152,7 +152,7 @@ const processMail = Effect.fn("processMail")(function* (
 			},
 		}),
 	);
-});
+}, Effect.uninterruptible);
 
 const saveTransaction = Effect.fn("save-transaction")(function* (
 	transaction: Transaction,

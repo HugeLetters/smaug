@@ -41,7 +41,7 @@ const sync = Effect.fn(function* (batchSize: number) {
 	yield* processMailBatch(Accounts, batchSize);
 
 	yield* Effect.log("Processing done");
-}, Effect.uninterruptible);
+});
 
 /** Inerrupts on `ctrl-c/ctrl-d`; succeeds if the tty ends */
 const TerminalInputQuit = Effect.gen(function* () {
