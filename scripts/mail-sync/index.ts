@@ -165,7 +165,7 @@ const SheetsLive = Google.Sheets.SheetsClient.live.pipe(
 	Layer.provide([OauthLive, RateLimiterLive]),
 );
 
-const FirstEmptyRowLive = Google.Sheets.AppendRow.live(500).pipe(
+const FirstEmptyRowLive = Google.Sheets.AppendRow.live(1_000).pipe(
 	Layer.provide(SheetsLive),
 );
 
