@@ -54,7 +54,9 @@ const TerminalInputQuit = Effect.gen(function* () {
 		Stream.filter(
 			({ key }) => key.ctrl && (key.name === "c" || key.name === "d"),
 		),
-		Stream.runForEach(() => Effect.interrupt),
+		Stream.runForEach(() =>
+			Effect.logWarning("Shutting down").pipe(Effect.andThen(Effect.interrupt)),
+		),
 	);
 });
 
