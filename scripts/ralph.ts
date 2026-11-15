@@ -4,15 +4,15 @@
  */
 import { BunRuntime, BunServices } from "@effect/platform-bun";
 import { Logger } from "effect";
+import * as Argument from "effect/cli/Argument";
+import * as CliError from "effect/cli/CliError";
+import * as Command from "effect/cli/Command";
+import * as Flag from "effect/cli/Flag";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as ChildProcess from "effect/process/ChildProcess";
 import * as Stream from "effect/Stream";
-import * as Str from "effect/String";
-import * as Argument from "effect/unstable/cli/Argument";
-import * as CliError from "effect/unstable/cli/CliError";
-import * as Command from "effect/unstable/cli/Command";
-import * as Flag from "effect/unstable/cli/Flag";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import * as String_ from "effect/String";
 
 type RalphConfig = Command.Command.Config.Infer<typeof CliConfig>;
 
@@ -89,34 +89,34 @@ export const runRalphLoop = Effect.fn("runRalphLoop")(function* (
 	);
 });
 
-const prompts = Flag.string("prompt").pipe(
+const prompts = Flag.String("prompt").pipe(
 	Flag.withDescription("Prompt text to send to the CLI"),
 	Flag.atLeast(0),
 );
 
-const filePrompts = Flag.fileText("prompt-file").pipe(
+const filePrompts = Flag.FileText("prompt-file").pipe(
 	Flag.withDescription("File path to read additional prompt text"),
 	Flag.atLeast(0),
 );
 
-const completionPromise = Flag.string("completion-promise").pipe(
+const completionPromise = Flag.String("completion-promise").pipe(
 	Flag.withDescription("Token that ends the loop when seen in output"),
 	Flag.withDefault("DONE"),
 	Flag.filterMap(
-		Option.liftPredicate(Str.isNonEmpty),
+		Option.liftPredicate(String_.isNonEmpty),
 		() => "completion-promise cannot be empty",
 	),
 	Flag.map((promise) => `<promise>${promise}</promise>`),
 );
 
-const progressFile = Flag.string("progress-file").pipe(
+const progressFile = Flag.String("progress-file").pipe(
 	Flag.withDescription(
 		"File path to append streamed output for progress tracking",
 	),
 	Flag.withDefault("progress.txt"),
 );
 
-const maxIterations = Flag.integer("max-iterations").pipe(
+const maxIterations = Flag.Int("max-iterations").pipe(
 	Flag.withDescription("Maximum iterations before stopping"),
 	Flag.filterMap(
 		Option.liftPredicate((iterations) => iterations > 0),
@@ -125,8 +125,9 @@ const maxIterations = Flag.integer("max-iterations").pipe(
 	Flag.withDefault(null),
 );
 
-const noMax = Flag.boolean("no-max").pipe(
+const noMax = Flag.Boolean("no-max").pipe(
 	Flag.withDescription("Run without an iteration limit"),
+	Flag.withDefault(false),
 );
 
 const CliConfig = {
@@ -136,12 +137,12 @@ const CliConfig = {
 	progressFile,
 	maxIterations,
 	noMax,
-	model: Flag.choice("model", Object.values(Models)).pipe(
+	model: Flag.Literals("model", Object.values(Models)).pipe(
 		Flag.withAlias("m"),
 		Flag.withDescription("Model to use"),
 		Flag.withDefault(Models.TrinityLarge),
 	),
-	commandArgs: Argument.string("args").pipe(
+	commandArgs: Argument.String("args").pipe(
 		Argument.variadic(),
 		Argument.withDescription("Extra argument passed to opencode"),
 	),

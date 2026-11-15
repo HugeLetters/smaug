@@ -4,7 +4,7 @@ import { Logger } from "effect";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import * as ChildProcess from "effect/process/ChildProcess";
 import { GeneratePalette } from "../src/color/generate";
 
 class BuildError extends Data.TaggedError("BuildError")<{

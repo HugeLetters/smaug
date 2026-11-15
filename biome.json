@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.3.14/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.6.7/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -15,9 +15,16 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
+			"preset": "recommended",
 			"style": {
-				"useBlockStatements": "error"
+				"useBlockStatements": "error",
+				"useConsistentArrayType": {
+					"level": "error",
+					"fix": "safe",
+					"options": {
+						"syntax": "generic"
+					}
+				}
 			}
 		},
 		"domains": {
@@ -40,6 +47,14 @@
 			"source": {
 				"organizeImports": "on"
 			}
+		}
+	},
+	"markdown": {
+		"formatter": {
+			"enabled": false
+		},
+		"linter": {
+			"enabled": false
 		}
 	}
 }

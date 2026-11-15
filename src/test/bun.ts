@@ -4,20 +4,20 @@
 
 import * as BunTest from "bun:test";
 import { flow } from "effect";
-import type * as Arr from "effect/Array";
+import * as Arbitrary_ from "effect/Arbitrary";
+import type * as Array_ from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Fn from "effect/Function";
+import * as Function_ from "effect/Function";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
-import * as Num from "effect/Number";
+import * as Number_ from "effect/Number";
 import * as Predicate from "effect/Predicate";
 import * as Schedule from "effect/Schedule";
-import * as Schema from "effect/Schema";
+import type * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as FastCheck from "effect/testing/FastCheck";
 import * as TestClock from "effect/testing/TestClock";
 import * as TestConsole from "effect/testing/TestConsole";
 
@@ -34,9 +34,13 @@ export namespace EffectBunTest {
 		timeout?: BunTest.TestOptions | number,
 	) => void;
 
-	type Arbitrary = Schema.Any | FastCheck.Arbitrary<unknown>;
+	type Arbitrary = Schema.Constraint | Arbitrary_.Arbitrary<unknown>;
 	type ArbitraryType<TArb extends Arbitrary> =
-		TArb extends FastCheck.Arbitrary<infer T> ? T : Schema.Schema.Type<TArb>;
+		TArb extends Arbitrary_.Arbitrary<infer T>
+			? T
+			: TArb extends Schema.Constraint
+				? TArb["Type"]
+				: never;
 
 	type Arbitraries = Record<string, Arbitrary>;
 	type ArbitrariesType<TArbs extends Arbitraries> = {
@@ -58,7 +62,7 @@ export namespace EffectBunTest {
 		only: EffectBunTest.Test<R>;
 		/** Run test for each case in array */
 		each: <T>(
-			cases: Arr.NonEmptyArray<T>,
+			cases: Array_.NonEmptyArray<T>,
 		) => <A, E>(
 			name: string,
 			self: TestFunction<A, E, R, Array<T>>,
@@ -75,7 +79,7 @@ export namespace EffectBunTest {
 			timeout?:
 				| number
 				| (BunTest.TestOptions & {
-						fastCheck?: FastCheck.Parameters<ArbitrariesType<TArbs>>;
+						check?: Arbitrary_.CheckOptions;
 				  }),
 		) => void;
 	}
@@ -154,7 +158,7 @@ export namespace EffectBunTest {
 			timeout?:
 				| number
 				| (BunTest.TestOptions & {
-						fastCheck?: FastCheck.Parameters<ArbitrariesType<Arbs>>;
+						check?: Arbitrary_.CheckOptions;
 				  }),
 		) => void;
 	}
@@ -238,35 +242,20 @@ function makeTester<R>(
 
 	test.fails = (name, self) => base.failing(name, () => run([], self));
 
-	test.prop = (name, arbitraries, self, timeout) => {
-		const arbs = FastCheck.record(
-			Object.entries(arbitraries).reduce(
-				(result, [key, arb]) => {
-					const arbitrary =
-						arb instanceof FastCheck.Arbitrary
-							? arb
-							: Schema.toArbitrary(arb)(FastCheck);
-					result[key] = arbitrary;
-					return result;
-				},
-				{} as Record<string, FastCheck.Arbitrary<unknown>>,
-			),
-		);
-
-		return base(
+	test.prop = (name, arbitraries, self, timeout) =>
+		base(
 			name,
-			() => {
-				const prop = FastCheck.asyncProperty(arbs, (as) =>
-					run([as as never], self).then((v) => !!v),
-				);
-				return FastCheck.assert(
-					prop,
-					Predicate.isObject(timeout) ? (timeout?.fastCheck as object) : {},
-				);
-			},
+			() =>
+				assertProperty(
+					arbitraries,
+					(as) =>
+						Effect.promise(() => run([as as never], self)).pipe(
+							Effect.map((v) => v !== false),
+						),
+					timeout,
+				),
 			timeout,
 		);
-	};
 
 	return test;
 }
@@ -276,32 +265,54 @@ const prop: EffectBunTest.Methods["prop"] = (
 	arbitraries,
 	self,
 	timeout,
-) => {
-	const arbs = FastCheck.record(
-		Object.entries(arbitraries).reduce(
-			(result, [key, arb]) => {
-				result[key] =
-					arb instanceof FastCheck.Arbitrary
-						? arb
-						: Schema.toArbitrary(arb)(FastCheck);
-				return result;
-			},
-			{} as Record<string, FastCheck.Arbitrary<unknown>>,
+) =>
+	BunTest.test(
+		name,
+		() =>
+			assertProperty(
+				arbitraries,
+				(as) =>
+					Effect.sync(() => {
+						self(as as never);
+						return true;
+					}),
+				timeout,
+			),
+		timeout,
+	);
+
+/** Checks `property` against generated inputs; rejects with the formatted counterexample. */
+function assertProperty(
+	arbitraries: Record<
+		string,
+		Schema.Constraint | Arbitrary_.Arbitrary<unknown>
+	>,
+	property: (values: Record<string, unknown>) => Effect.Effect<boolean>,
+	timeout: number | { readonly check?: Arbitrary_.CheckOptions } | undefined,
+) {
+	const arbitrary = Arbitrary_.all(
+		Object.fromEntries(
+			Object.entries(arbitraries).map(([key, arb]) => [
+				key,
+				Arbitrary_.isArbitrary(arb) ? arb : Arbitrary_.schema(arb),
+			]),
 		),
 	);
 
-	return BunTest.test(
-		name,
-		() => {
-			const prop = FastCheck.property(arbs, (as) => self(as as never));
-			return FastCheck.assert(
-				prop,
-				Predicate.isObject(timeout) ? (timeout?.fastCheck as object) : {},
-			);
-		},
-		timeout,
+	return Arbitrary_.checkEffect(
+		arbitrary,
+		property,
+		Predicate.isObject(timeout) ? timeout.check : undefined,
+	).pipe(
+		Effect.flatMap((result) => {
+			const failure = Arbitrary_.formatCheckFailure(result);
+			return failure === undefined
+				? Effect.void
+				: Effect.die(new Error(failure));
+		}),
+		Effect.runPromise,
 	);
-};
+}
 
 function layer<R, E>(
 	layer_: Layer.Layer<R, E>,
@@ -375,7 +386,7 @@ function flakyTest<A, E, R>(
 		Effect.retry(
 			Schedule.recurs(10).pipe(
 				Schedule.while((meta) =>
-					Num.isLessThanOrEqualTo(meta.elapsed, timeoutMs),
+					Number_.isLessThanOrEqualTo(meta.elapsed, timeoutMs),
 				),
 			),
 		),
@@ -390,7 +401,7 @@ function makeMethods(test: BunTest.Test<[]>): EffectBunTest.Methods {
 			flow(Effect.scoped, Effect.provide(TestEnv)),
 			test,
 		),
-		live: makeTester<never>(Fn.identity, test),
+		live: makeTester<never>(Function_.identity, test),
 		scopedLive: makeTester<Scope.Scope>(Effect.scoped, test),
 		flakyTest,
 		layer,

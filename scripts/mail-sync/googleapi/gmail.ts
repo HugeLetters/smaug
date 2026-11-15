@@ -1,5 +1,5 @@
 import { pipe } from "effect";
-import * as Arr from "effect/Array";
+import * as Array_ from "effect/Array";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
@@ -9,8 +9,8 @@ import * as Layer from "effect/Layer";
 import * as Match from "effect/Match";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as RateLimiter from "effect/persistence/RateLimiter";
 import * as Schedule from "effect/Schedule";
-import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import type { gmail_v1 } from "googleapis";
 import { google } from "googleapis";
 import { OauthClient } from "./oauth";
@@ -271,7 +271,7 @@ export const searchEmails = Effect.fn("searchEmails")(function* (
 			}),
 			{ concurrency: "unbounded" },
 		),
-		Effect.map(Arr.filter(Predicate.isNotNull)),
+		Effect.map(Array_.filter(Predicate.isNotNull)),
 	);
 });
 
@@ -298,8 +298,8 @@ function extractEmailContent(payload: gmail_v1.Schema$MessagePart): Content {
 	if (payload.parts) {
 		return pipe(
 			payload.parts,
-			Arr.map(extractEmailContent),
-			Arr.reduce({ html: null, plain: null }, (result, part): Content => {
+			Array_.map(extractEmailContent),
+			Array_.reduce({ html: null, plain: null }, (result, part): Content => {
 				return {
 					html: concatMaybe(result.html, part.html),
 					plain: concatMaybe(result.plain, part.plain),

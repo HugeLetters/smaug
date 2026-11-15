@@ -1,15 +1,15 @@
 import * as BunHttpServer from "@effect/platform-bun/BunHttpServer";
-import * as Arr from "effect/Array";
+import * as Array_ from "effect/Array";
 import * as Data from "effect/Data";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as HttpServer from "effect/http/HttpServer";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as ChildProcess from "effect/process/ChildProcess";
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 import * as Redacted from "effect/Redacted";
-import * as HttpServer from "effect/unstable/http/HttpServer";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
 import { CodeChallengeMethod } from "google-auth-library";
 import { Secrets } from "~/server/lib/utils/secrets";
 import { Google } from "./googleapi";
@@ -26,7 +26,7 @@ export const SetupAuth = Effect.gen(function* () {
 	if (clientToken !== null) {
 		const clientRefreshToken = yield* Google.Oauth.GetRefreshToken;
 		if (clientRefreshToken !== null) {
-			yield* RefreshSecret.set(clientRefreshToken);
+			yield* RefreshSecret.set(Redacted.make(clientRefreshToken));
 		}
 
 		return;
@@ -70,7 +70,7 @@ const validateToken = Effect.fn(function* (token: string | null) {
 });
 
 const areScopesSufficient = (scopes: ReadonlyArray<string>) =>
-	Arr.difference(RequiredScopes, scopes).length === 0;
+	Array_.difference(RequiredScopes, scopes).length === 0;
 
 const GetValidAccessToken = Effect.gen(function* () {
 	const oauth = yield* Google.Oauth.OauthClient;
@@ -166,7 +166,7 @@ const RegenerateCredentials = Effect.gen(function* () {
 		);
 	}
 
-	yield* RefreshSecret.set(refreshToken);
+	yield* RefreshSecret.set(Redacted.make(refreshToken));
 	yield* oauth.use((c) => c.setCredentials(tokenResponse.tokens));
 
 	yield* Effect.log("Google refresh token regenerated successfully");

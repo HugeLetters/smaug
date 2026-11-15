@@ -1,13 +1,13 @@
 import type * as Differ from "effect/Differ";
 import * as HashMap from "effect/HashMap";
-import * as Record from "effect/Record";
+import * as Record_ from "effect/Record";
 import { Format } from "./format.export";
 import { HashMapDiffer } from "./hash-map.export";
 import { makeDiffer } from "./shared";
 
 export type Patch<TValue, TPatch> = HashMapDiffer.Patch<string, TValue, TPatch>;
 
-type Value<TValue> = Record.ReadonlyRecord<string, TValue>;
+type Value<TValue> = Record_.ReadonlyRecord<string, TValue>;
 
 export function differ<TValue, TPatch>(
 	valueDiffer: Differ.Differ<TValue, TPatch>,
@@ -26,7 +26,7 @@ export function differ<TValue, TPatch>(
 		patch(oldValue, patch: Patch<TValue, TPatch>) {
 			return hmDiffer
 				.patch(HashMap.fromIterable(Object.entries(oldValue)), patch)
-				.pipe(Record.fromEntries);
+				.pipe(Record_.fromEntries);
 		},
 	});
 }

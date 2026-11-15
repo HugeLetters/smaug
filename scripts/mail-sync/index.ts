@@ -2,19 +2,19 @@ import { BunRuntime } from "@effect/platform-bun";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Cron from "effect/Cron";
+import * as Command from "effect/cli/Command";
+import * as Flag from "effect/cli/Flag";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
+import * as RateLimiter from "effect/persistence/RateLimiter";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as Terminal from "effect/Terminal";
-import * as Command from "effect/unstable/cli/Command";
-import * as Flag from "effect/unstable/cli/Flag";
-import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import { jsonFileConfigProvider } from "~/server/lib/utils/config";
 import { Secrets } from "~/server/lib/utils/secrets";
 import { Accounts } from "./account.config";
@@ -116,11 +116,12 @@ const runInteractiveMode = Effect.fn(function* (batchSize: number) {
 const GmailSyncCommand = Command.make(
 	"gmail-sync",
 	{
-		runOnce: Flag.boolean("run-once").pipe(
+		runOnce: Flag.Boolean("run-once").pipe(
 			Flag.withAlias("o"),
 			Flag.withDescription("Run the sync once and exit"),
+			Flag.withDefault(false),
 		),
-		batchSize: Flag.integer("batch-size").pipe(
+		batchSize: Flag.Int("batch-size").pipe(
 			Flag.withAlias("s"),
 			Flag.withDefault(50),
 			Flag.withDescription(
@@ -143,7 +144,7 @@ const program = Command.run(GmailSyncCommand, {
 });
 
 const BunServicesLive = BunServices.layer;
-const SecretsLive = Secrets.live("gmail-sync");
+const SecretsLive = Secrets.layer("smaug/gmail-sync");
 const AppConfigLive = AppConfig.live.pipe(Layer.provide(SecretsLive));
 
 const layerStoreMemory = RateLimiter.layerStoreMemory;
@@ -191,12 +192,12 @@ const MainLive = Layer.mergeAll(
 		Logger.consolePretty({
 			colors: true,
 			mode: "tty",
-			stderr: true,
 			formatDate(date) {
 				return `${padNumber(date.getDate())}.${padNumber(date.getMonth() + 1)} ${padNumber(date.getHours())}:${padNumber(date.getMinutes())}:${padNumber(date.getSeconds())}.${padNumber(date.getMilliseconds(), 3)}`;
 			},
 		}),
 	]),
+	Layer.succeed(Logger.LogToStderr, true),
 ).pipe(Layer.provideMerge(ConfigLive));
 
 program.pipe(Effect.scoped, Effect.provide(MainLive), BunRuntime.runMain({}));

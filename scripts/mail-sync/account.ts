@@ -1,4 +1,4 @@
-import type * as Arr from "effect/Array";
+import type * as Array_ from "effect/Array";
 import * as Chunk from "effect/Chunk";
 import * as Data from "effect/Data";
 import type * as DateTime from "effect/DateTime";
@@ -107,7 +107,7 @@ export class ParserFailure extends Data.TaggedError("ParserFailure")<{
 
 export interface ParserFailureList {
 	readonly _tag: "ParserFailureList";
-	readonly failures: Arr.NonEmptyReadonlyArray<ParserFailureWithMeta>;
+	readonly failures: Array_.NonEmptyReadonlyArray<ParserFailureWithMeta>;
 }
 
 export interface ParserFailureWithMeta {

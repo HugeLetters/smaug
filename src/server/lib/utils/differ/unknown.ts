@@ -1,4 +1,4 @@
-import * as Arr from "effect/Array";
+import * as Array_ from "effect/Array";
 import * as Chunk from "effect/Chunk";
 import * as Data from "effect/Data";
 import type * as Differ from "effect/Differ";
@@ -147,7 +147,7 @@ export const differ: Differ.Differ<unknown, Patch> = makeDiffer<unknown, Patch>(
 
 const ValueHelpers = {
 	array: makeDifferHelpers(
-		Arr.isArray,
+		Array_.isArray,
 		ArrayDiffer.differ(differ),
 		(patch) => new ArrayPatch({ patch }),
 	),

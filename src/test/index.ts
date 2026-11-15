@@ -2,7 +2,7 @@ import { expect } from "bun:test";
 import { fail } from "node:assert/strict";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
-import * as Fn from "effect/Function";
+import * as Function_ from "effect/Function";
 import { Differ } from "~/server/lib/utils/differ";
 import { Stdout } from "~/server/lib/utils/stdout";
 
@@ -23,7 +23,7 @@ export function expectFail<E, R>(self: Effect.Effect<unknown, E, R>) {
 	return self.pipe(Effect.map(unexpectedSuccess), Effect.flip);
 }
 
-const unexpectedSuccess = Fn.flow(
+const unexpectedSuccess = Function_.flow(
 	(v) => Bun.inspect(v, { colors: true, depth: 10 }),
 	(v) => `Expected effect to fail. Received\n${v}`,
 	(m) => fail(m),

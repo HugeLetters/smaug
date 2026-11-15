@@ -2,13 +2,13 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import * as Record from "effect/Record";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as Record_ from "effect/Record";
 import { type Palette, Presets } from "./palette";
 
 function generatePaletteCss(palette: Palette): string {
-	const paletteCss = Record.reduce(palette, "", (res, shadeMap, token) => {
-		const tokenCss = Record.reduce(shadeMap, "", (res, color, shade) => {
+	const paletteCss = Record_.reduce(palette, "", (res, shadeMap, token) => {
+		const tokenCss = Record_.reduce(shadeMap, "", (res, color, shade) => {
 			return `${res}--color-${token}-${shade}: ${color};`;
 		});
 

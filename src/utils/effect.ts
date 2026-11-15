@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
-import * as Fn from "effect/Function";
+import * as Function_ from "effect/Function";
 
-export const flatMapError = Fn.dual<
+export const flatMapError = Function_.dual<
 	<E1, A2, E2, R2>(
 		f: (a: E1) => Effect.Effect<A2, E2, R2>,
 	) => <A1, R1>(

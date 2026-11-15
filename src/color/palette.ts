@@ -1,6 +1,6 @@
 import { regex } from "arkregex";
 import * as Effect from "effect/Effect";
-import * as Record from "effect/Record";
+import * as Record_ from "effect/Record";
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 import * as SchemaIssue from "effect/SchemaIssue";
@@ -33,7 +33,7 @@ type Token =
 	| "error";
 
 type BasePalette = Record<Token, string>;
-export type Palette = Record.ReadonlyRecord<Token, ShadeToColorMap>;
+export type Palette = Record_.ReadonlyRecord<Token, ShadeToColorMap>;
 
 const oklchRegex = regex(
 	"^oklch\\((?<l>[\\d.]+) (?<c>[\\d.]+) (?<h>[\\d.]+)\\)$",
@@ -47,7 +47,7 @@ const OklchFromSelf = Schema.Struct({
 
 const Oklch = Schema.String.pipe(
 	Schema.decodeTo(OklchFromSelf, {
-		decode: SchemaGetter.transformOrFail((s) => {
+		decode: SchemaGetter.transformEffect((s) => {
 			const match = oklchRegex.exec(s);
 			if (!match) {
 				return Effect.fail(
@@ -109,7 +109,7 @@ const generateShades = Effect.fn(function* (baseOklch: string) {
 	};
 
 	const shades: Partial<Types.Mutable<ShadeToColorMap>> = {};
-	for (const shade of Object.keys(lightnessDeltas) as Shade[]) {
+	for (const shade of Object.keys(lightnessDeltas) as Array<Shade>) {
 		// Derive L from base, clamp to [0,1] for very light/dark bases
 		const l = Math.max(0, Math.min(1, baseL + lightnessDeltas[shade]));
 		// Derive C from base, scale proportionally, ensure non-negative
@@ -126,7 +126,10 @@ const generateShades = Effect.fn(function* (baseOklch: string) {
 
 const generatePalette = Effect.fn(function* (baseColors: BasePalette) {
 	const entries: Palette = yield* Effect.all(
-		Record.mapEntries(baseColors, (oklch, key) => [key, generateShades(oklch)]),
+		Record_.mapEntries(baseColors, (oklch, key) => [
+			key,
+			generateShades(oklch),
+		]),
 	);
 	return entries;
 });
@@ -160,7 +163,7 @@ export const Presets = Effect.gen(function* () {
 			warning: "oklch(0.77 0.19 70.1)",
 			error: "oklch(0.64 0.25 16.4)",
 		}),
-	} satisfies Record.ReadonlyRecord<
+	} satisfies Record_.ReadonlyRecord<
 		string,
 		Effect.Effect<Palette, unknown, unknown>
 	>);

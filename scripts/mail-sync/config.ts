@@ -8,7 +8,7 @@ import { Secrets } from "~/server/lib/utils/secrets";
 
 const OauthConfig = Effect.gen(function* () {
 	// OAuth client ID for Google APIs
-	const clientId = Config.string("client_id");
+	const clientId = Config.String("client_id");
 	const oauth = yield* Config.all({
 		clientId,
 	}).pipe(Config.nested("oauth"));
@@ -26,9 +26,9 @@ const OauthConfig = Effect.gen(function* () {
 
 const SheetConfig = Effect.gen(function* () {
 	// Target Google Sheet ID
-	const spreadsheetId = Config.string("spreadsheet_id");
+	const spreadsheetId = Config.String("spreadsheet_id");
 	// Worksheet name inside the spreadsheet
-	const sheetName = Config.string("sheet_name");
+	const sheetName = Config.String("sheet_name");
 
 	const column = Schema.Literals([
 		"date",
@@ -53,11 +53,11 @@ const MailConfig = Effect.gen(function* () {
 	const startDate = dateTimeConfig("start_date");
 
 	// Gmail label to use to mark emails which parser processed
-	const processedlabelName = Config.string("label_name");
+	const processedlabelName = Config.String("label_name");
 	// Gmail label to use to mark emails which parser failed to process
-	const failedlabelName = Config.string("failed_label_name");
+	const failedlabelName = Config.String("failed_label_name");
 	// Gmail label to use to mark emails which parser skipped
-	const skippedlabelName = Config.string("skipped_label_name");
+	const skippedlabelName = Config.String("skipped_label_name");
 
 	return yield* Config.all({
 		startDate,

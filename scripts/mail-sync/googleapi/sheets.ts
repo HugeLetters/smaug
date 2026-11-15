@@ -1,5 +1,5 @@
 import { flow, pipe } from "effect";
-import * as Arr from "effect/Array";
+import * as Array_ from "effect/Array";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
@@ -7,9 +7,9 @@ import * as Effect from "effect/Effect";
 import * as Iterable from "effect/Iterable";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
+import * as RateLimiter from "effect/persistence/RateLimiter";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
-import * as RateLimiter from "effect/unstable/persistence/RateLimiter";
 import type { sheets_v4 } from "googleapis";
 import { google } from "googleapis";
 import { Google } from ".";
@@ -381,9 +381,9 @@ function makeSpareUpdateBatch(
 	const startIndex = columnToIndex(startColumn);
 
 	return pipe(
-		Arr.chop(values, (arr) => {
-			const [before, after] = Arr.splitWhere(arr, Predicate.isNull);
-			if (!Arr.isArrayNonEmpty(before)) {
+		Array_.chop(values, (arr) => {
+			const [before, after] = Array_.splitWhere(arr, Predicate.isNull);
+			if (!Array_.isArrayNonEmpty(before)) {
 				return [null, after.slice(1)];
 			}
 
@@ -407,7 +407,7 @@ function makeSpareUpdateBatch(
 				values: [sliceValues],
 			}),
 		),
-		Arr.fromIterable,
+		Array_.fromIterable,
 	);
 }
 
